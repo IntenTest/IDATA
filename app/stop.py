@@ -17,6 +17,7 @@ HOST = "127.0.0.1"
 PORT = 54321
 APP_DIRECTORY = Path(__file__).resolve().parent
 START_SCRIPT = APP_DIRECTORY / "start.py"
+PID_PATH = APP_DIRECTORY / ".ohwemby.pid"
 
 
 def port_is_available() -> bool:
@@ -51,6 +52,19 @@ def listener_pids() -> set[int]:
         text=True,
     )
     return {int(line) for line in result.stdout.splitlines() if line.strip().isdigit()}
+
+
+def pid_file_pid() -> int | None:
+    try:
+        raw_pid = PID_PATH.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return None
+
+    if not raw_pid.isdigit():
+        return None
+    return int(raw_pid)
 
 
 def command_line(pid: int) -> str:
@@ -120,7 +134,14 @@ def stop_process(pid: int) -> None:
 
 
 def stop_start_processes(dry_run: bool) -> int:
-    pids = sorted(pid for pid in listener_pids() if is_start_process(pid))
+    listening_pids = listener_pids()
+    pid_from_file = pid_file_pid()
+    pids = {
+        pid for pid in listening_pids if is_start_process(pid)
+    }
+    if pid_from_file in listening_pids:
+        pids.add(pid_from_file)
+    pids = sorted(pids)
     if not pids:
         print(f"No start.py process is listening on port {PORT}.")
         return 0

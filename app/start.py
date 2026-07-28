@@ -6,6 +6,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -17,6 +18,7 @@ PORT = 54321
 APP_DIRECTORY = Path(__file__).resolve().parent
 VENDOR_DIRECTORY = APP_DIRECTORY.parent / "vendor"
 SETTINGS_PATH = APP_DIRECTORY / "config" / "settings.json"
+PID_PATH = APP_DIRECTORY / ".ohwemby.pid"
 VENDOR_PACKAGES = frozenset(("vue-3.5.24", "element-plus-2.11.8"))
 HDC_TIMEOUT_SECONDS = 10
 DEFAULT_SETTINGS = {
@@ -393,6 +395,20 @@ def create_server(handler) -> AppServer:
     return AppServer((HOST, PORT), handler)
 
 
+def write_pid_file() -> None:
+    PID_PATH.write_text(f"{os.getpid()}\n", encoding="utf-8")
+
+
+def remove_pid_file() -> None:
+    try:
+        if PID_PATH.read_text(encoding="utf-8").strip() == str(os.getpid()):
+            PID_PATH.unlink()
+    except FileNotFoundError:
+        return
+    except OSError:
+        return
+
+
 def main() -> None:
     missing_packages = [
         package for package in VENDOR_PACKAGES if not (VENDOR_DIRECTORY / package).is_dir()
@@ -427,6 +443,7 @@ def main() -> None:
 
     print(f"Serving the app at http://localhost:{PORT}")
     print("Press Ctrl+C to stop.")
+    write_pid_file()
 
     try:
         server.serve_forever()
@@ -434,6 +451,7 @@ def main() -> None:
         print("\nStopping the app.")
     finally:
         server.server_close()
+        remove_pid_file()
 
 
 if __name__ == "__main__":
