@@ -372,6 +372,17 @@ def console_marker(console_output: str, label: str, expected: str) -> bool:
 
 def report_reference(console_output: str) -> tuple[str, str] | None:
     lines = console_output.splitlines()
+
+    # Screenshot inspection prints the complete report path on this line.
+    # Prefer it over the older recording output, whose report location is
+    # inferred from the lines following "日志存储路径".
+    for line in lines:
+        match = re.search(r"汇总\s*HTML\s*[：:]\s*(.+?)\s*$", line, re.IGNORECASE)
+        if match:
+            report_value = match.group(1).strip().strip("\"'")
+            if report_value:
+                return "", report_value
+
     for index, line in enumerate(lines):
         match = re.search(r"日志存储路径\s*[：:]\s*(.*)", line)
         if not match:
