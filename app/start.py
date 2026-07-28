@@ -21,6 +21,7 @@ import webbrowser
 HOST = "127.0.0.1"
 PORT = 54321
 APP_DIRECTORY = Path(__file__).resolve().parent
+PROJECT_DIRECTORY = APP_DIRECTORY.parent
 VENDOR_DIRECTORY = APP_DIRECTORY.parent / "vendor"
 SETTINGS_PATH = APP_DIRECTORY / "config" / "settings.json"
 PID_PATH = APP_DIRECTORY / ".ohwemby.pid"
@@ -35,9 +36,9 @@ DEFAULT_SETTINGS = {
     "releaseName": "Release 2.4",
     "defaultEnvironment": "QA staging",
     "defaultOwner": "kouyanan 30030842",
-    "testCaseLibraryPath": "",
-    "pythonExecutablePath": "",
-    "runTestCasesPath": "",
+    "testCaseLibraryPath": "../../Phoebe-main/Testcases",
+    "pythonExecutablePath": "../../python310/python.exe",
+    "runTestCasesPath": "../../Phoebe-main/Testcases/run_testcase.py",
     "autoLoadDevices": True,
     "deviceRefreshSeconds": 30,
     "tablePageSize": 20,
@@ -185,7 +186,10 @@ def write_settings(settings: dict) -> None:
 
 
 def configured_path(raw_path: str) -> Path:
-    return Path(raw_path).expanduser().resolve()
+    path = Path(raw_path).expanduser()
+    if not path.is_absolute():
+        path = PROJECT_DIRECTORY / path
+    return path.resolve()
 
 
 def discover_test_cases(settings: dict | None = None) -> dict:
