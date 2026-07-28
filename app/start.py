@@ -5,6 +5,7 @@ from datetime import datetime
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Lock
 from urllib.parse import unquote, urlparse
 import json
 import os
@@ -12,6 +13,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 
 
 HOST = "127.0.0.1"
@@ -22,6 +24,8 @@ SETTINGS_PATH = APP_DIRECTORY / "config" / "settings.json"
 PID_PATH = APP_DIRECTORY / ".ohwemby.pid"
 VENDOR_PACKAGES = frozenset(("vue-3.5.24", "element-plus-2.11.8"))
 HDC_TIMEOUT_SECONDS = 10
+TEST_RUNS = {}
+TEST_RUNS_LOCK = Lock()
 DEFAULT_SETTINGS = {
     "projectName": "Oh Wemby",
     "releaseName": "Release 2.4",
@@ -225,6 +229,8 @@ def discover_test_cases(settings: dict | None = None) -> dict:
 def start_test_cases(request_body: dict) -> dict:
     raw_case_names = request_body.get("testCases")
     inspection_mode = request_body.get("inspectionMode")
+    run_name = request_body.get("name")
+    device = request_body.get("device")
     if (
         not isinstance(raw_case_names, list)
         or not raw_case_names
@@ -233,6 +239,10 @@ def start_test_cases(request_body: dict) -> dict:
         raise RuntimeError("Select at least one test case.")
     if inspection_mode not in (0, 1, 2):
         raise RuntimeError("Inspection mode must be 0, 1, or 2.")
+    if not isinstance(run_name, str) or not run_name.strip():
+        raise RuntimeError("Enter a test run name.")
+    if not isinstance(device, str) or not device.strip():
+        raise RuntimeError("Select a device.")
 
     settings = read_settings()
     raw_library_path = settings["testCaseLibraryPath"].strip()
@@ -265,25 +275,66 @@ def start_test_cases(request_body: dict) -> dict:
     for case_id in case_ids:
         case_name = discovered_cases[case_id]
         command = [str(python_path), case_name, str(inspection_mode)]
+        popen_options = {
+            "cwd": library_path,
+        }
+        if os.name == "nt":
+            popen_options["creationflags"] = subprocess.CREATE_NEW_CONSOLE
         try:
-            process = subprocess.Popen(
-                command,
-                cwd=library_path,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            process = subprocess.Popen(command, **popen_options)
         except OSError as error:
             raise RuntimeError(f"Unable to start {case_name}: {error}") from error
         processes.append(
             {
                 "testCase": case_id,
+                "testCaseName": case_name,
                 "inspectionMode": inspection_mode,
                 "processId": process.pid,
+                "_process": process,
             }
         )
 
-    return {"started": processes}
+    started_at = datetime.now().astimezone()
+    run_id = f"TR-{int(time.time() * 1000)}"
+    run = {
+        "id": run_id,
+        "title": run_name.strip(),
+        "device": device.strip(),
+        "inspectionMode": inspection_mode,
+        "startedAt": started_at.isoformat(timespec="seconds"),
+        "processes": processes,
+    }
+    with TEST_RUNS_LOCK:
+        TEST_RUNS[run_id] = run
+    return serialize_test_run(run)
+
+
+def serialize_test_run(run: dict) -> dict:
+    processes = run["processes"]
+    running_count = sum(
+        1 for process_info in processes if process_info["_process"].poll() is None
+    )
+    return {
+        "id": run["id"],
+        "title": run["title"],
+        "device": run["device"],
+        "inspectionMode": run["inspectionMode"],
+        "startedAt": run["startedAt"],
+        "status": "Running" if running_count else "Completed",
+        "runningProcesses": running_count,
+        "totalProcesses": len(processes),
+        "started": [
+            {key: value for key, value in process_info.items() if key != "_process"}
+            for process_info in processes
+        ],
+    }
+
+
+def list_test_runs() -> dict:
+    with TEST_RUNS_LOCK:
+        runs = [serialize_test_run(run) for run in TEST_RUNS.values()]
+    runs.sort(key=lambda run: run["startedAt"], reverse=True)
+    return {"testRuns": runs}
 
 
 def send_json(handler: SimpleHTTPRequestHandler, status: int, value: dict) -> None:
@@ -311,6 +362,10 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                 result = {"testCases": [], "error": str(error)}
                 status = 500
             send_json(self, status, result)
+            return
+
+        if request_path == "/api/test-runs":
+            send_json(self, 200, list_test_runs())
             return
 
         if request_path == "/api/settings":

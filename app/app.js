@@ -683,6 +683,7 @@ const App = {
     const testRunStatusFilter = ref("");
     const testRunCurrentPage = ref(1);
     const testRunPageSize = ref(20);
+    let testRunRefreshTimer = 0;
     const selectedTestRunId = ref(requestedRunId || "TR-024");
     const testRuns = ref([
       {
@@ -1405,10 +1406,13 @@ const App = {
 
     onMounted(() => {
       loadSettings();
+      loadActiveTestRuns();
+      testRunRefreshTimer = window.setInterval(loadActiveTestRuns, 2000);
       window.addEventListener("popstate", syncViewFromLocation);
     });
     onBeforeUnmount(() => {
       window.clearTimeout(settingsSaveTimer);
+      window.clearInterval(testRunRefreshTimer);
       window.removeEventListener("popstate", syncViewFromLocation);
     });
 
@@ -1634,6 +1638,8 @@ const App = {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            name: newTestRun.name,
+            device: newTestRun.device,
             testCases: newTestRun.selections,
             inspectionMode: newTestRun.inspectionMode,
           }),
@@ -1646,6 +1652,7 @@ const App = {
           );
         }
         testRunExecution.value = result;
+        upsertActiveTestRun(result);
         testRunStarted.value = true;
         ElementPlus.ElMessage({
           message: isChinese.value
@@ -1662,6 +1669,55 @@ const App = {
         });
       } finally {
         testRunStarting.value = false;
+      }
+    }
+
+    function activeRunToTableRow(run) {
+      const completed = run.status === "Completed";
+      return {
+        id: run.id,
+        title: run.title,
+        description: completed
+          ? "The command process has finished."
+          : "The command process is currently running.",
+        suite: `${run.totalProcesses} test case${run.totalProcesses === 1 ? "" : "s"}`,
+        device: run.device,
+        environment: settings.defaultEnvironment,
+        owner: settings.defaultOwner,
+        status: run.status,
+        totalCases: run.totalProcesses,
+        executedCases: 0,
+        passed: 0,
+        failed: 0,
+        blocked: 0,
+        progress: completed ? 100 : 0,
+        duration: completed ? "Finished" : "Running",
+        updated: completed ? "Just now" : "Now",
+        done: completed,
+        liveProcessRun: true,
+      };
+    }
+
+    function upsertActiveTestRun(run) {
+      const row = activeRunToTableRow(run);
+      const index = testRuns.value.findIndex((item) => item.id === row.id);
+      if (index === -1) {
+        testRuns.value.unshift(row);
+      } else {
+        testRuns.value.splice(index, 1, row);
+      }
+    }
+
+    async function loadActiveTestRuns() {
+      try {
+        const response = await fetch("/api/test-runs", { cache: "no-store" });
+        if (!response.ok) {
+          return;
+        }
+        const result = await response.json();
+        result.testRuns.forEach(upsertActiveTestRun);
+      } catch (_error) {
+        // Keep the last known state while the local service is temporarily unavailable.
       }
     }
 
