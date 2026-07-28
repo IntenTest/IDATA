@@ -22,7 +22,7 @@ window.OhWembyTableDefinitions = Object.freeze({
         field: "updated",
         label: "Updated",
         width: 120,
-        renderer: "text",
+        renderer: "date",
         sortable: "custom",
       },
       {

@@ -478,6 +478,33 @@ function updatedSortValue(updated) {
   return Number.MAX_SAFE_INTEGER;
 }
 
+function dateOnlyValue(updated) {
+  if (typeof updated !== "string" || !updated.trim()) {
+    return updated;
+  }
+
+  const value = updated.trim();
+  const calendarDate = value.match(/^\d{4}-\d{2}-\d{2}/);
+  if (calendarDate) {
+    return calendarDate[0];
+  }
+
+  const normalizedValue = value.toLowerCase();
+  const date =
+    normalizedValue === "just now" || normalizedValue === "now"
+      ? new Date()
+      : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function testCaseIdSortValue(id) {
   return Number.parseInt(id.replace(/\D/g, ""), 10) || 0;
 }
@@ -1765,6 +1792,9 @@ const App = {
     function tableValue(row, column) {
       if (column.renderer === "count") {
         return row[column.field].length;
+      }
+      if (column.renderer === "date") {
+        return displayValue(dateOnlyValue(row[column.field]));
       }
       return displayValue(row[column.field]);
     }
