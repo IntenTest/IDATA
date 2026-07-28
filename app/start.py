@@ -262,7 +262,7 @@ def start_test_cases(request_body: dict) -> dict:
         raise RuntimeError("Python executable path must end with python.exe.")
 
     discovered_cases = {
-        test_case["id"]: test_case["title"]
+        test_case["id"]: test_case
         for test_case in discover_test_cases(settings)["testCases"]
     }
     case_ids = list(dict.fromkeys(raw_case_names))
@@ -273,17 +273,26 @@ def start_test_cases(request_body: dict) -> dict:
 
     processes = []
     for case_id in case_ids:
-        case_name = discovered_cases[case_id]
-        command = [str(python_path), case_name, str(inspection_mode)]
+        test_case = discovered_cases[case_id]
+        case_name = test_case["title"]
+        case_script = f"{test_case['path']}.py"
+        command = [str(python_path), case_script, str(inspection_mode)]
         popen_options = {
             "cwd": library_path,
         }
-        if os.name == "nt":
-            popen_options["creationflags"] = subprocess.CREATE_NEW_CONSOLE
+        display_command = subprocess.list2cmdline(command)
+        print(
+            f"[test run: {run_name.strip()}] cwd: {library_path}\n"
+            f"[test case: {case_name}] command: {display_command}",
+            flush=True,
+        )
         try:
             process = subprocess.Popen(command, **popen_options)
         except OSError as error:
-            raise RuntimeError(f"Unable to start {case_name}: {error}") from error
+            raise RuntimeError(
+                f"Unable to start {case_name} with command "
+                f"{display_command}: {error}"
+            ) from error
         processes.append(
             {
                 "testCase": case_id,
