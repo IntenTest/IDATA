@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Serve the local application on its only supported port."""
 
+from datetime import datetime
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -25,7 +26,7 @@ DEFAULT_SETTINGS = {
     "projectName": "Oh Wemby",
     "releaseName": "Release 2.4",
     "defaultEnvironment": "QA staging",
-    "defaultOwner": "Maya Chen",
+    "defaultOwner": "kouyanan 30030842",
     "testCaseLibraryPath": "",
     "pythonExecutablePath": "",
     "autoLoadDevices": True,
@@ -193,21 +194,28 @@ def discover_test_cases(settings: dict | None = None) -> dict:
             "error": f"Test case library directory was not found: {library_path}",
         }
 
+    test_case_paths = sorted(
+        path
+        for path in library_path.rglob("*")
+        if path.is_file() and path.suffix.lower() == ".py"
+    )
     test_cases = []
-    for test_case_path in sorted(library_path.rglob("*")):
-        if not test_case_path.is_file() or test_case_path.suffix.lower() != ".py":
-            continue
+    for case_id, test_case_path in enumerate(test_case_paths, start=1):
         relative_name = (
             test_case_path.relative_to(library_path).with_suffix("").as_posix()
         )
+        modified_time = datetime.fromtimestamp(
+            test_case_path.stat().st_mtime
+        ).astimezone()
         test_cases.append(
             {
-                "id": relative_name,
+                "id": str(case_id),
                 "title": test_case_path.stem,
+                "path": relative_name,
                 "category": "Standard",
                 "status": "Not run",
-                "owner": "Test library",
-                "updated": "From library",
+                "owner": settings["defaultOwner"],
+                "updated": modified_time.isoformat(timespec="seconds"),
             }
         )
 

@@ -2,7 +2,7 @@
   "projectName": "Oh Wemby",
   "releaseName": "Release 2.4",
   "defaultEnvironment": "QA staging",
-  "defaultOwner": "Maya Chen",
+  "defaultOwner": "kouyanan 30030842",
   "testCaseLibraryPath": "",
   "pythonExecutablePath": "",
   "autoLoadDevices": true,

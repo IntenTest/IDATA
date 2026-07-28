@@ -451,6 +451,11 @@ function updatedSortValue(updated) {
     return (Number.parseInt(value, 10) || 1) * 24 * 60;
   }
 
+  const timestamp = Date.parse(updated);
+  if (!Number.isNaN(timestamp)) {
+    return -timestamp;
+  }
+
   return Number.MAX_SAFE_INTEGER;
 }
 
@@ -541,7 +546,7 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
   projectName: "Oh Wemby",
   releaseName: "Release 2.4",
   defaultEnvironment: "QA staging",
-  defaultOwner: "Maya Chen",
+  defaultOwner: "kouyanan 30030842",
   testCaseLibraryPath: "",
   pythonExecutablePath: "",
   autoLoadDevices: true,
