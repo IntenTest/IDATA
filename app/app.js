@@ -220,7 +220,9 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Screenshot inspection": "截图检测",
   "Recording inspection": "录屏检测",
   "Inspection report": "查看检测报告",
+  "Unable to open the inspection report.": "无法打开检测报告。",
   "Waiting": "等待中",
+  "Test execution is in progress.": "测试正在执行，请等待结果更新。",
   "Task command center": "任务指挥中心",
   "Plan, assign, and deliver release work from one focused workspace.": "在一个专注的工作区中规划、分配并交付发布工作。",
   "Total tasks": "任务总数",
@@ -1396,6 +1398,25 @@ const App = {
       selectView("Test Run Details", { runId: run.id });
     }
 
+    async function openTestReport(testCase) {
+      try {
+        const runId = encodeURIComponent(selectedTestRunId.value);
+        const caseId = encodeURIComponent(testCase.testCase);
+        const response = await fetch(
+          `/api/test-runs/${runId}/reports/${caseId}/open`,
+          { method: "POST" },
+        );
+        if (!response.ok) {
+          throw new Error("Unable to open the inspection report.");
+        }
+      } catch (_error) {
+        ElementPlus.ElMessage({
+          message: t("Unable to open the inspection report."),
+          type: "error",
+        });
+      }
+    }
+
     function backToTestRuns() {
       selectView("Tasks");
     }
@@ -1778,6 +1799,7 @@ const App = {
       newTestSuite,
       openCreateDialog,
       openCreateSuiteDialog,
+      openTestReport,
       pageSize,
       paginatedTestCases,
       paginatedTestSuites,
@@ -2237,10 +2259,19 @@ const App = {
                   <h3>{{ displayValue(selectedTestRun.title) }}</h3>
                 </div>
                 <el-tag
+                  class="run-status-tag"
                   :type="runStatusType(selectedTestRun.status)"
                   effect="light"
                   round
                 >
+                  <el-icon
+                    v-if="selectedTestRun.status === 'Running'"
+                    class="is-loading"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9" />
+                    </svg>
+                  </el-icon>
                   {{ t(selectedTestRun.status) }}
                 </el-tag>
               </div>
@@ -2296,21 +2327,20 @@ const App = {
                   <span>{{ t('Failed') }}</span>
                   <strong>{{ selectedTestRun.failed }}</strong>
                 </div>
-                <div class="result-blocked">
-                  <span>{{ t('Blocked') }}</span>
-                  <strong>{{ selectedTestRun.blocked }}</strong>
+                <div class="result-running">
+                  <span>{{ t('Running') }}</span>
+                  <strong>{{ selectedTestRun.totalCases - selectedTestRun.executedCases }}</strong>
                 </div>
               </div>
               <p class="run-result-note">
-                {{ t(selectedTestRun.status === 'Blocked'
+                {{ t(selectedTestRun.status === 'Running'
+                  ? 'Test execution is in progress.'
+                  : selectedTestRun.status === 'Blocked'
                   ? 'One blocked case requires a restored test account before execution can continue.'
                   : selectedTestRun.failed || selectedTestRun.blocked
                     ? 'Review the recorded failures before closing this run.'
                     : 'Completed without blocking issues.') }}
               </p>
-              <el-button plain @click="selectView('Test Cases')">
-                {{ t('View test cases') }}
-              </el-button>
             </aside>
 
             <section
@@ -2343,6 +2373,14 @@ const App = {
                       effect="light"
                       round
                     >
+                      <el-icon
+                        v-if="testCase.result === 'Running'"
+                        class="is-loading"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <circle cx="12" cy="12" r="9" />
+                        </svg>
+                      </el-icon>
                       {{ t(testCase.result) }}
                     </el-tag>
                   </div>
@@ -2363,8 +2401,7 @@ const App = {
                     v-if="testCase.reportUrl"
                     class="case-report-link"
                     :href="testCase.reportUrl"
-                    target="_blank"
-                    rel="noopener"
+                    @click.prevent="openTestReport(testCase)"
                   >
                     {{ t('Inspection report') }} ↗
                   </a>

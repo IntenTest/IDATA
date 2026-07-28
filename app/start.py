@@ -8,7 +8,6 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import unquote, urlparse
 import json
-import mimetypes
 import os
 import re
 import socket
@@ -16,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import webbrowser
 
 
 HOST = "127.0.0.1"
@@ -421,11 +421,7 @@ def resolve_report(
             candidate = candidate / "index.html"
         if candidate.is_file():
             process_info["_reportPath"] = candidate
-            report_url = (
-                f"/api/test-runs/{run['id']}/reports/"
-                f"{process_info['testCase']}"
-            )
-            return report_url, str(candidate)
+            return candidate.as_uri(), str(candidate)
     return None
 
 
@@ -574,55 +570,36 @@ def send_json(handler: SimpleHTTPRequestHandler, status: int, value: dict) -> No
     handler.wfile.write(payload)
 
 
-def send_test_report(
-    handler: SimpleHTTPRequestHandler,
-    run_id: str,
-    case_id: str,
-) -> None:
+def open_test_report(run_id: str, case_id: str) -> str:
     with TEST_RUNS_LOCK:
         run = TEST_RUNS.get(run_id)
-        if run is not None:
-            serialize_test_run(run)
-            process_info = next(
-                (
-                    item
-                    for item in run["processes"]
-                    if item["testCase"] == case_id
-                ),
-                None,
-            )
-            report_path = (
-                process_info.get("_reportPath") if process_info is not None else None
-            )
-        else:
-            report_path = None
-    if report_path is None:
-        handler.send_error(404, "Test report was not found")
-        return
-    try:
-        payload = report_path.read_bytes()
-    except OSError:
-        handler.send_error(404, "Test report was not found")
-        return
-    content_type = mimetypes.guess_type(report_path.name)[0] or "application/octet-stream"
-    handler.send_response(200)
-    handler.send_header("Content-Type", content_type)
-    handler.send_header("Content-Length", str(len(payload)))
-    handler.send_header("Cache-Control", "no-store")
-    handler.end_headers()
-    handler.wfile.write(payload)
+        if run is None:
+            raise RuntimeError("Test run was not found.")
+        serialize_test_run(run)
+        process_info = next(
+            (
+                item
+                for item in run["processes"]
+                if item["testCase"] == case_id
+            ),
+            None,
+        )
+        report_path = (
+            process_info.get("_reportPath") if process_info is not None else None
+        )
+    if report_path is None or not report_path.is_file():
+        raise RuntimeError("Test report was not found.")
+    report_uri = report_path.as_uri()
+    if os.name == "nt":
+        os.startfile(str(report_path))
+    elif not webbrowser.open(report_uri):
+        raise RuntimeError("Unable to open the test report in a browser.")
+    return report_uri
 
 
 class AppRequestHandler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         request_path = urlparse(self.path).path
-        report_match = re.fullmatch(
-            r"/api/test-runs/([^/]+)/reports/([^/]+)",
-            request_path,
-        )
-        if report_match:
-            send_test_report(self, *report_match.groups())
-            return
         if request_path == "/api/devices":
             send_json(self, 200, discover_hdc_devices())
             return
@@ -654,7 +631,23 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self) -> None:
-        if urlparse(self.path).path != "/api/test-runs":
+        request_path = urlparse(self.path).path
+        report_match = re.fullmatch(
+            r"/api/test-runs/([^/]+)/reports/([^/]+)/open",
+            request_path,
+        )
+        if report_match:
+            try:
+                report_uri = open_test_report(*report_match.groups())
+                result = {"reportUrl": report_uri}
+                status = 200
+            except (RuntimeError, OSError) as error:
+                result = {"error": str(error)}
+                status = 404
+            send_json(self, status, result)
+            return
+
+        if request_path != "/api/test-runs":
             self.send_error(404)
             return
 
