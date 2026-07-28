@@ -3,9 +3,9 @@
   "releaseName": "Release 2.4",
   "defaultEnvironment": "QA staging",
   "defaultOwner": "kouyanan 30030842",
-  "testCaseLibraryPath": "../../Phoebe-main/Testcases",
-  "pythonExecutablePath": "../../python310/python.exe",
-  "runTestCasesPath": "../../Phoebe-main/Testcases/run_testcase.py",
+  "testCaseLibraryPath": "../Phoebe-main/Testcases",
+  "pythonExecutablePath": "../python310/python.exe",
+  "runTestCasesPath": "../Phoebe-main/Testcases/run_testcase.py",
   "autoLoadDevices": true,
   "deviceRefreshSeconds": 30,
   "tablePageSize": 20

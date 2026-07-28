@@ -1,7 +1,19 @@
 @echo off
 setlocal
 
-cd /d "%~dp0app"
+set "APP_DIRECTORY=%~dp0app"
+if not exist "%APP_DIRECTORY%\start.py" (
+    set "APP_DIRECTORY=%~dp0ohwemby-main\app"
+)
+
+if not exist "%APP_DIRECTORY%\start.py" (
+    echo Unable to find the Oh Wemby application directory.
+    echo Expected it at "%~dp0app" or "%~dp0ohwemby-main\app".
+    pause
+    exit /b 1
+)
+
+cd /d "%APP_DIRECTORY%"
 
 where py >nul 2>nul
 if %errorlevel% equ 0 (
@@ -21,11 +33,21 @@ if errorlevel 1 (
 
 echo.
 echo Starting Oh Wemby...
-%PYTHON_COMMAND% start.py
+start "Oh Wemby" %PYTHON_COMMAND% start.py
 
 if errorlevel 1 (
     echo.
     echo Failed to start Oh Wemby.
+    pause
+    exit /b 1
+)
+
+echo Waiting for Oh Wemby to become available...
+powershell -NoProfile -Command "$deadline = (Get-Date).AddSeconds(30); do { try { $response = Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:54321' -TimeoutSec 1; if ($response.StatusCode -eq 200) { Start-Process 'http://localhost:54321'; exit 0 } } catch {}; Start-Sleep -Milliseconds 500 } while ((Get-Date) -lt $deadline); exit 1"
+
+if errorlevel 1 (
+    echo.
+    echo Oh Wemby did not become available at http://localhost:54321.
     pause
     exit /b 1
 )
