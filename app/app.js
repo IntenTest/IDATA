@@ -52,9 +52,10 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Workspace initialized": "工作区已初始化",
   "The foundation is ready to extend.": "基础功能已准备好扩展。",
   "Release 2.4 regression": "2.4 版本回归测试",
-  "Release quality overview": "版本质量概览",
-  "See what’s ready. Fix what’s not.": "看清就绪项，解决待处理问题。",
-  "Track tests, review issues, and start new runs.": "跟踪测试、审查问题并启动新的测试运行。",
+  "Test case library overview": "测试用例库",
+  "Release quality overview": "版本质量",
+  "See what’s ready. Fix what’s not.": "查看版本质量",
+  "Track tests, review issues, and start new runs.": "汇总测试进度、问题和运行状态。",
   "Release 2.4 · QA staging": "2.4 版本 · QA 预发布环境",
   "Release confidence": "版本置信度",
   "Based on executed checks": "基于已执行的检查",
@@ -72,8 +73,8 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "All recorded checks are clear.": "所有已记录的检查均无异常。",
   "Open run": "打开运行",
   "checks executed": "项检查已执行",
-  "Quality at a glance": "质量概览",
-  "Track coverage, review failures, and keep every release decision tied to a clear test result.": "跟踪覆盖范围、审查失败项，并确保每项发布决策都有明确的测试结果依据。",
+  "Quality at a glance": "管理测试用例",
+  "Track coverage, review failures, and keep every release decision tied to a clear test result.": "查看用例覆盖与执行结果。",
   "Pass rate": "通过率",
   Passing: "通过",
   "Needs attention": "需要关注",
@@ -93,9 +94,9 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "No test cases match these filters": "没有符合筛选条件的测试用例",
   Edit: "编辑",
   "Contact an administrator to edit test cases.": "如需编辑测试用例，请联系管理员。",
-  "Reusable test case groups": "可复用的测试用例组",
-  "Build once, run together.": "一次构建，统一运行。",
-  "Organize related test cases into suites, then select one or more suites when starting a focused test run.": "将相关测试用例整理为套件，并在启动专项测试运行时选择一个或多个套件。",
+  "Reusable test case groups": "测试套件",
+  "Build once, run together.": "管理测试套件",
+  "Organize related test cases into suites, then select one or more suites when starting a focused test run.": "将相关用例组成套件，批量发起测试。",
   "Test suite summary": "测试套件摘要",
   "Test suites": "测试套件",
   "Grouped cases": "已分组用例",
@@ -110,9 +111,10 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Configure another run": "配置另一次运行",
   "View run details": "查看运行详情",
   "Start another run": "发起新的测试运行",
-  "Quality assurance workflow": "质量保证工作流",
-  "Start a focused test run.": "启动专项测试运行。",
-  "Name the run, choose a target device, and select the test cases for the tester.": "命名测试运行、选择目标设备，并为测试人员选择测试用例。",
+  "Quality assurance workflow": "测试工作流",
+  "Manage test runs.": "管理测试运行",
+  "Start a focused test run.": "发起测试运行",
+  "Name the run, choose a target device, and select the test cases for the tester.": "填写名称，选择设备和测试用例。",
   "Test run name": "测试运行名称",
   "Example: Release 2.4 regression": "示例：2.4 版本回归测试",
   Device: "设备",
@@ -120,8 +122,8 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Devices detected through HDC": "通过 HDC 检测到的设备",
   "This page searches the computer for connected devices by running HDC.": "此页面通过运行 HDC 搜索连接到电脑的设备。",
   "Test devices": "测试设备",
-  "See every device ready for testing.": "查看所有已准备好进行测试的设备。",
-  "Find devices connected through HDC and confirm each target before starting a run.": "查找通过 HDC 连接的设备，并在开始运行前确认每个测试目标。",
+  "See every device ready for testing.": "管理测试设备",
+  "Find devices connected through HDC and confirm each target before starting a run.": "查看 HDC 已连接设备，确认可用测试目标。",
   "Refresh devices": "刷新设备",
   "Searching for devices...": "正在搜索设备……",
   "No connected devices found": "未找到已连接的设备",
@@ -179,8 +181,9 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Select a device.": "请选择设备。",
   "Demo task added.": "演示任务已添加。",
   "New task": "新建任务",
-  "Application settings": "应用设置",
-  "Edit the runtime parameters stored in the local config file.": "编辑保存在本地配置文件中的运行参数。",
+  "Application settings": "应用配置",
+  "Configure application.": "配置应用参数",
+  "Edit the runtime parameters stored in the local config file.": "管理本地运行参数。",
   "Config file": "配置文件",
   "Project name": "项目名称",
   "Release name": "版本名称",
@@ -293,7 +296,7 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Test runs": "测试运行",
   "Test run history": "测试运行历史",
   "Recent test runs": "最近的测试运行",
-  "Monitor active runs, review outcomes, and keep release validation moving.": "监控正在执行的测试、审查结果，并持续推进版本验证。",
+  "Monitor active runs, review outcomes, and keep release validation moving.": "查看运行进度与执行结果。",
   "Active runs": "进行中的运行",
   "Completed runs": "已完成的运行",
   "Overall pass rate": "总体通过率",
@@ -2130,7 +2133,7 @@ const App = {
           <section class="test-runs-intro">
             <div>
               <p class="eyebrow">{{ t('Quality assurance workflow') }}</p>
-              <h2>{{ t('Test runs') }}</h2>
+              <h2>{{ t('Manage test runs.') }}</h2>
               <p>{{ t('Monitor active runs, review outcomes, and keep release validation moving.') }}</p>
             </div>
             <div class="run-overview-stats" :aria-label="t('Test runs')">
@@ -2504,7 +2507,7 @@ const App = {
           <section class="test-summary" aria-label="Test suite summary">
             <article class="summary-intro">
               <div>
-                <p class="eyebrow">{{ t('Release 2.4 regression') }}</p>
+                <p class="eyebrow">{{ t('Test case library overview') }}</p>
                 <h2>{{ t('Quality at a glance') }}</h2>
                 <p>{{ t('Track coverage, review failures, and keep every release decision tied to a clear test result.') }}</p>
               </div>
@@ -2990,7 +2993,7 @@ const App = {
             <div class="settings-intro">
               <div>
                 <p class="eyebrow">{{ t('Application settings') }}</p>
-                <h2>{{ t('Settings') }}</h2>
+                <h2>{{ t('Configure application.') }}</h2>
                 <p>{{ t('Edit the runtime parameters stored in the local config file.') }}</p>
               </div>
               <div class="settings-file">
