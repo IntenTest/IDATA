@@ -200,9 +200,9 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Settings restored to defaults.": "设置已恢复为默认值。",
   "Settings saved.": "设置已保存。",
   "Inspection mode": "检查模式",
-  "No inspection": "不检查",
-  "Screenshot inspection": "截图检查",
-  "Record inspection": "录屏检查",
+  "Execute only": "仅执行",
+  "Static inspection": "静态检测",
+  "Motion inspection": "动效检测",
   "Test case library unavailable": "测试用例库不可用",
   "Reload test cases": "重新加载测试用例",
   "Starting...": "正在启动……",
@@ -2616,7 +2616,9 @@ const App = {
             <h2>{{ newTestRun.name }}</h2>
             <p>
               {{ testRunExecution?.started?.length || selectedRunCaseCount }}
-              test cases started in inspection mode {{ newTestRun.inspectionMode }} on
+              test cases started in
+              {{ t(['Execute only', 'Static inspection', 'Motion inspection'][newTestRun.inspectionMode]) }}
+              mode on
               {{ selectedDevice?.name || selectedDevice?.model || newTestRun.device }}.
             </p>
             <div class="run-success-actions">
@@ -2711,13 +2713,13 @@ const App = {
                     class="inspection-mode"
                   >
                     <el-radio-button :value="0">
-                      0 · {{ t('No inspection') }}
+                      {{ t('Execute only') }}
                     </el-radio-button>
                     <el-radio-button :value="1">
-                      1 · {{ t('Screenshot inspection') }}
+                      {{ t('Static inspection') }}
                     </el-radio-button>
                     <el-radio-button :value="2">
-                      2 · {{ t('Record inspection') }}
+                      {{ t('Motion inspection') }}
                     </el-radio-button>
                   </el-radio-group>
                 </el-form-item>
@@ -2742,7 +2744,7 @@ const App = {
                   </el-button>
                   <span>
                     {{ selectedRunCaseCount }} test cases ·
-                    {{ t(['No inspection', 'Screenshot inspection', 'Record inspection'][newTestRun.inspectionMode]) }}
+                    {{ t(['Execute only', 'Static inspection', 'Motion inspection'][newTestRun.inspectionMode]) }}
                   </span>
                 </div>
               </el-form>
@@ -2762,8 +2764,7 @@ const App = {
               <div class="run-build">
                 <span>{{ t('Inspection mode') }}</span>
                 <strong>
-                  {{ newTestRun.inspectionMode }} ·
-                  {{ t(['No inspection', 'Screenshot inspection', 'Record inspection'][newTestRun.inspectionMode]) }}
+                  {{ t(['Execute only', 'Static inspection', 'Motion inspection'][newTestRun.inspectionMode]) }}
                 </strong>
               </div>
               <div class="run-selection">
