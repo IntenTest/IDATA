@@ -7,6 +7,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock
 from urllib.parse import unquote, urlparse
+import base64
 import json
 import os
 import socket
@@ -186,6 +187,21 @@ def configured_path(raw_path: str) -> Path:
     return Path(raw_path).expanduser().resolve()
 
 
+def powershell_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def powershell_test_command(command: list[str]) -> str:
+    arguments = " ".join(powershell_literal(argument) for argument in command)
+    script = (
+        "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); "
+        "$OutputEncoding = [Console]::OutputEncoding; "
+        "$env:PYTHONUTF8 = '1'; "
+        f"& {arguments}"
+    )
+    return base64.b64encode(script.encode("utf-16le")).decode("ascii")
+
+
 def discover_test_cases(settings: dict | None = None) -> dict:
     settings = settings or read_settings()
     raw_library_path = settings["testCaseLibraryPath"].strip()
@@ -307,9 +323,14 @@ def start_test_cases(request_body: dict) -> dict:
         }
         if os.name == "nt":
             command = [
-                os.environ.get("COMSPEC", "cmd.exe"),
-                "/k",
-                subprocess.list2cmdline(worker_command),
+                "powershell.exe",
+                "-NoLogo",
+                "-NoProfile",
+                "-NoExit",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-EncodedCommand",
+                powershell_test_command(worker_command),
             ]
             popen_options["creationflags"] = subprocess.CREATE_NEW_CONSOLE
         else:
