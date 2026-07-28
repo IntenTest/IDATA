@@ -1,0 +1,12 @@
+[project]
+name = "ohwemby"
+version = "0.1.0"
+description = "Ohwemby application"
+requires-python = "==3.12.10"
+dependencies = []
+
+[dependency-groups]
+dev = []
+
+[tool.uv]
+package = false

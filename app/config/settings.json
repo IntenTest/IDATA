@@ -1,0 +1,11 @@
+{
+  "projectName": "Oh Wemby",
+  "releaseName": "Release 2.4",
+  "defaultEnvironment": "QA staging",
+  "defaultOwner": "Maya Chen",
+  "testCaseLibraryPath": "",
+  "pythonExecutablePath": "",
+  "autoLoadDevices": true,
+  "deviceRefreshSeconds": 30,
+  "tablePageSize": 20
+}
