@@ -214,6 +214,13 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Console output": "控制台输出",
   "Output is recorded here while the command runs.": "命令运行期间，所有输出都会记录在这里。",
   "Waiting for console output...": "正在等待控制台输出……",
+  "Case results": "用例结果",
+  "Automation result": "自动化执行",
+  "Log inspection": "日志检查",
+  "Screenshot inspection": "截图检测",
+  "Recording inspection": "录屏检测",
+  "Inspection report": "查看检测报告",
+  "Waiting": "等待中",
   "Task command center": "任务指挥中心",
   "Plan, assign, and deliver release work from one focused workspace.": "在一个专注的工作区中规划、分配并交付发布工作。",
   "Total tasks": "任务总数",
@@ -1396,6 +1403,7 @@ const App = {
     function runStatusType(status) {
       return {
         Completed: "success",
+        Failed: "danger",
         Running: "primary",
         Blocked: "danger",
         Ready: "info",
@@ -1681,27 +1689,28 @@ const App = {
     }
 
     function activeRunToTableRow(run) {
-      const completed = run.status === "Completed";
+      const finished = run.runningProcesses === 0;
       return {
         id: run.id,
         title: run.title,
-        description: completed
+        description: finished
           ? "The command process has finished."
           : "The command process is currently running.",
         suite: `${run.totalProcesses} test case${run.totalProcesses === 1 ? "" : "s"}`,
         device: run.device,
         owner: appSettings.defaultOwner,
         consoleOutput: run.consoleOutput || "",
+        caseResults: run.started || [],
         status: run.status,
         totalCases: run.totalProcesses,
-        executedCases: 0,
-        passed: 0,
-        failed: 0,
+        executedCases: run.executedProcesses || 0,
+        passed: run.passedProcesses || 0,
+        failed: run.failedProcesses || 0,
         blocked: 0,
-        progress: completed ? 100 : 0,
-        duration: completed ? "Finished" : "Running",
-        updated: completed ? "Just now" : "Now",
-        done: completed,
+        progress: run.progress || 0,
+        duration: finished ? "Finished" : "Running",
+        updated: finished ? "Just now" : "Now",
+        done: finished,
         liveProcessRun: true,
       };
     }
@@ -2138,7 +2147,7 @@ const App = {
                   aria-label="Filter test runs by status"
                 >
                   <el-option
-                    v-for="status in ['Running', 'Ready', 'Blocked', 'Completed']"
+                    v-for="status in ['Running', 'Ready', 'Blocked', 'Failed', 'Completed']"
                     :key="status"
                     :label="t(status)"
                     :value="status"
@@ -2303,6 +2312,65 @@ const App = {
                 {{ t('View test cases') }}
               </el-button>
             </aside>
+
+            <section
+              v-if="selectedTestRun.liveProcessRun"
+              class="run-case-results"
+            >
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow">{{ t('Results') }}</p>
+                  <h3>{{ t('Case results') }}</h3>
+                </div>
+              </div>
+              <div class="case-result-list">
+                <article
+                  v-for="testCase in selectedTestRun.caseResults"
+                  :key="testCase.testCase"
+                  class="case-result-item"
+                >
+                  <div class="case-result-heading">
+                    <div>
+                      <strong>{{ testCase.testCaseName }}</strong>
+                      <small>{{ testCase.command }}</small>
+                    </div>
+                    <el-tag
+                      :type="testCase.result === 'Passed'
+                        ? 'success'
+                        : testCase.result === 'Failed'
+                          ? 'danger'
+                          : 'primary'"
+                      effect="light"
+                      round
+                    >
+                      {{ t(testCase.result) }}
+                    </el-tag>
+                  </div>
+                  <div class="case-check-list">
+                    <span
+                      v-for="check in testCase.checks"
+                      :key="check.label"
+                      :class="{
+                        passed: check.passed,
+                        pending: testCase.result === 'Running' && !check.passed,
+                      }"
+                    >
+                      {{ check.passed ? '✓' : testCase.result === 'Running' ? '…' : '×' }}
+                      {{ t(check.label) }}
+                    </span>
+                  </div>
+                  <a
+                    v-if="testCase.reportUrl"
+                    class="case-report-link"
+                    :href="testCase.reportUrl"
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    {{ t('Inspection report') }} ↗
+                  </a>
+                </article>
+              </div>
+            </section>
 
             <section
               v-if="selectedTestRun.liveProcessRun"

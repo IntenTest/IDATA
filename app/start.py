@@ -8,7 +8,9 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import unquote, urlparse
 import json
+import mimetypes
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -355,11 +357,121 @@ def start_test_cases(request_body: dict) -> dict:
         "device": device.strip(),
         "inspectionMode": inspection_mode,
         "startedAt": started_at.isoformat(timespec="seconds"),
+        "libraryPath": library_path,
         "processes": processes,
     }
     with TEST_RUNS_LOCK:
         TEST_RUNS[run_id] = run
     return serialize_test_run(run)
+
+
+def console_marker(console_output: str, label: str, expected: str) -> bool:
+    pattern = rf"{re.escape(label)}\s*[：:]?\s*{re.escape(expected)}"
+    return re.search(pattern, console_output, re.IGNORECASE) is not None
+
+
+def report_reference(console_output: str) -> tuple[str, str] | None:
+    lines = console_output.splitlines()
+    for index, line in enumerate(lines):
+        match = re.search(r"日志存储路径\s*[：:]\s*(.*)", line)
+        if not match:
+            continue
+        storage_path = match.group(1).strip().strip("\"'")
+        for report_line in lines[index + 1 :]:
+            report_line = report_line.strip()
+            if not report_line:
+                continue
+            url_match = re.search(r"https?://\S+", report_line)
+            if url_match:
+                return storage_path, url_match.group(0).rstrip(".,;")
+            if re.match(r"^[A-Za-z]:[\\/]", report_line) or report_line.startswith(
+                "\\\\"
+            ):
+                path_value = report_line
+            else:
+                path_value = re.split(r"[：:]", report_line, maxsplit=1)[-1]
+            return storage_path, path_value.strip().strip("\"'")
+    return None
+
+
+def resolve_report(
+    run: dict,
+    process_info: dict,
+    console_output: str,
+) -> tuple[str, str] | None:
+    process_info.pop("_reportPath", None)
+    reference = report_reference(console_output)
+    if not reference:
+        return None
+    storage_path, report_value = reference
+    if report_value.startswith(("http://", "https://")):
+        return report_value, report_value
+
+    report_path = Path(report_value).expanduser()
+    candidates = [report_path]
+    if not report_path.is_absolute():
+        library_path = run["libraryPath"]
+        candidates = [
+            library_path / report_path,
+            library_path / storage_path / report_path,
+        ]
+    for candidate in candidates:
+        candidate = candidate.resolve()
+        if candidate.is_dir():
+            candidate = candidate / "index.html"
+        if candidate.is_file():
+            process_info["_reportPath"] = candidate
+            report_url = (
+                f"/api/test-runs/{run['id']}/reports/"
+                f"{process_info['testCase']}"
+            )
+            return report_url, str(candidate)
+    return None
+
+
+def evaluate_test_case(
+    run: dict,
+    process_info: dict,
+    console_output: str,
+    exit_code: int | None,
+) -> dict:
+    inspection_mode = process_info["inspectionMode"]
+    checks = [
+        {
+            "label": "Automation result",
+            "passed": console_marker(console_output, "【最终结果】", "pass"),
+        },
+        {
+            "label": "Log inspection",
+            "passed": console_marker(console_output, "日志检查", "True"),
+        },
+    ]
+    if inspection_mode == 1:
+        checks.append(
+            {
+                "label": "Screenshot inspection",
+                "passed": console_marker(console_output, "用例截图检测", "True"),
+            }
+        )
+    elif inspection_mode == 2:
+        checks.append(
+            {
+                "label": "Recording inspection",
+                "passed": console_marker(console_output, "用例录屏检测", "True"),
+            }
+        )
+
+    finished = exit_code is not None
+    result = "Running" if not finished else "Passed" if all(
+        check["passed"] for check in checks
+    ) else "Failed"
+    report = resolve_report(run, process_info, console_output)
+    return {
+        "result": result,
+        "checks": checks,
+        "reportUrl": report[0] if report else None,
+        "reportLocation": report[1] if report else None,
+    }
 
 
 def serialize_test_run(run: dict) -> dict:
@@ -384,6 +496,12 @@ def serialize_test_run(run: dict) -> dict:
             )["exitCode"]
         except (OSError, json.JSONDecodeError, KeyError, TypeError):
             pass
+        evaluation = evaluate_test_case(
+            run,
+            process_info,
+            console_output,
+            exit_code,
+        )
         combined_output.append(
             f"===== {process_info['testCaseName']} =====\n{console_output}"
         )
@@ -393,17 +511,47 @@ def serialize_test_run(run: dict) -> dict:
                 for key, value in process_info.items()
                 if not key.startswith("_")
             }
-            | {"consoleOutput": console_output, "exitCode": exit_code}
+            | {
+                "consoleOutput": console_output,
+                "exitCode": exit_code,
+                **evaluation,
+            }
         )
+    finished_processes = [
+        process_info
+        for process_info in serialized_processes
+        if process_info["result"] != "Running"
+    ]
+    passed_count = sum(
+        1 for process_info in finished_processes if process_info["result"] == "Passed"
+    )
+    failed_count = sum(
+        1 for process_info in finished_processes if process_info["result"] == "Failed"
+    )
+    total_processes = len(processes)
     return {
         "id": run["id"],
         "title": run["title"],
         "device": run["device"],
         "inspectionMode": run["inspectionMode"],
         "startedAt": run["startedAt"],
-        "status": "Running" if running_count else "Completed",
+        "status": (
+            "Running"
+            if running_count
+            else "Failed"
+            if failed_count
+            else "Completed"
+        ),
         "runningProcesses": running_count,
-        "totalProcesses": len(processes),
+        "totalProcesses": total_processes,
+        "executedProcesses": len(finished_processes),
+        "passedProcesses": passed_count,
+        "failedProcesses": failed_count,
+        "progress": (
+            round(len(finished_processes) / total_processes * 100)
+            if total_processes
+            else 0
+        ),
         "consoleOutput": "\n\n".join(combined_output),
         "started": serialized_processes,
     }
@@ -426,9 +574,55 @@ def send_json(handler: SimpleHTTPRequestHandler, status: int, value: dict) -> No
     handler.wfile.write(payload)
 
 
+def send_test_report(
+    handler: SimpleHTTPRequestHandler,
+    run_id: str,
+    case_id: str,
+) -> None:
+    with TEST_RUNS_LOCK:
+        run = TEST_RUNS.get(run_id)
+        if run is not None:
+            serialize_test_run(run)
+            process_info = next(
+                (
+                    item
+                    for item in run["processes"]
+                    if item["testCase"] == case_id
+                ),
+                None,
+            )
+            report_path = (
+                process_info.get("_reportPath") if process_info is not None else None
+            )
+        else:
+            report_path = None
+    if report_path is None:
+        handler.send_error(404, "Test report was not found")
+        return
+    try:
+        payload = report_path.read_bytes()
+    except OSError:
+        handler.send_error(404, "Test report was not found")
+        return
+    content_type = mimetypes.guess_type(report_path.name)[0] or "application/octet-stream"
+    handler.send_response(200)
+    handler.send_header("Content-Type", content_type)
+    handler.send_header("Content-Length", str(len(payload)))
+    handler.send_header("Cache-Control", "no-store")
+    handler.end_headers()
+    handler.wfile.write(payload)
+
+
 class AppRequestHandler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         request_path = urlparse(self.path).path
+        report_match = re.fullmatch(
+            r"/api/test-runs/([^/]+)/reports/([^/]+)",
+            request_path,
+        )
+        if report_match:
+            send_test_report(self, *report_match.groups())
+            return
         if request_path == "/api/devices":
             send_json(self, 200, discover_hdc_devices())
             return

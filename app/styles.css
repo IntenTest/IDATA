@@ -855,6 +855,7 @@ h3 {
   border-bottom: 1px solid #eff0f5;
 }
 
+.run-case-results,
 .run-console-report {
   grid-column: 1 / -1;
   min-width: 0;
@@ -863,6 +864,80 @@ h3 {
   border-radius: 22px;
   background: #fff;
   box-shadow: 0 10px 30px rgba(37, 40, 74, 0.045);
+}
+
+.case-result-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.case-result-item {
+  padding: 18px;
+  border: 1px solid #e7e9f1;
+  border-radius: 14px;
+  background: #fafbfe;
+}
+
+.case-result-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.case-result-heading > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.case-result-heading small {
+  overflow: hidden;
+  color: #858ba3;
+  font-family: Consolas, "SFMono-Regular", monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.case-check-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.case-check-list span {
+  padding: 6px 9px;
+  border-radius: 8px;
+  color: #b42318;
+  background: #fff0ee;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.case-check-list span.passed {
+  color: #226e50;
+  background: #e8f8f0;
+}
+
+.case-check-list span.pending {
+  color: #82600d;
+  background: #fff7dc;
+}
+
+.case-report-link {
+  display: inline-flex;
+  margin-top: 14px;
+  color: #4f5ed7;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.case-report-link:hover {
+  text-decoration: underline;
 }
 
 .run-console-report .section-heading {
