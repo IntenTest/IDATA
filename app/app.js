@@ -589,7 +589,7 @@ const HISTORICAL_RUN_DEVICES = [
 ];
 
 const DEFAULT_APP_SETTINGS = Object.freeze({
-  projectName: "Oh Wemby",
+  projectName: "菲尔兹UI自动化测试平台",
   releaseName: "Release 2.4",
   defaultEnvironment: "QA staging",
   defaultOwner: "kouyanan 30030842",
@@ -1142,7 +1142,7 @@ const App = {
     watch(language, (value) => {
       window.localStorage.setItem("oh-wemby-language", value);
       document.documentElement.lang = value;
-      document.title = value === "zh-CN" ? "Oh Wemby - 中文" : "Oh Wemby";
+      document.title = "菲尔兹UI自动化测试平台";
     }, { immediate: true });
     watch(activeView, (view) => {
       if (
@@ -1903,7 +1903,7 @@ const App = {
   template: `
     <div class="app-shell">
       <aside class="sidebar">
-        <a class="brand" href="#" aria-label="Oh Wemby home">
+        <a class="brand" href="#" aria-label="菲尔兹UI自动化测试平台首页">
           <span class="brand-mark">W</span>
           <span>{{ appSettings.projectName }}</span>
         </a>

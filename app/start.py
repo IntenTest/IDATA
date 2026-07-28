@@ -31,7 +31,7 @@ TEST_RUNS_LOCK = Lock()
 TEST_RUN_LOG_DIRECTORY = APP_DIRECTORY / "logs" / "test-runs"
 TEST_PROCESS_RUNNER = APP_DIRECTORY / "run_test_process.py"
 DEFAULT_SETTINGS = {
-    "projectName": "Oh Wemby",
+    "projectName": "菲尔兹UI自动化测试平台",
     "releaseName": "Release 2.4",
     "defaultEnvironment": "QA staging",
     "defaultOwner": "kouyanan 30030842",
