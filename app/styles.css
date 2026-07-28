@@ -847,12 +847,45 @@ h3 {
 
 .run-metadata {
   display: grid;
-  grid-template-columns: 0.85fr 1.2fr 1.45fr 0.8fr;
+  grid-template-columns: 0.85fr 1.2fr 0.8fr;
   gap: 18px;
   margin: 0;
   padding: 18px 0;
   border-top: 1px solid #eff0f5;
   border-bottom: 1px solid #eff0f5;
+}
+
+.run-console-report {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 28px;
+  border: 1px solid #e5e7ef;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(37, 40, 74, 0.045);
+}
+
+.run-console-report .section-heading {
+  align-items: end;
+}
+
+.run-console-report .section-heading > span {
+  color: #858ba3;
+  font-size: 12px;
+}
+
+.run-console-report pre {
+  max-height: 520px;
+  margin: 20px 0 0;
+  padding: 18px;
+  overflow: auto;
+  border: 1px solid #292d3e;
+  border-radius: 12px;
+  color: #e8eaf2;
+  background: #171923;
+  font: 12px/1.65 Consolas, "SFMono-Regular", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .run-metadata div {
@@ -3131,4 +3164,38 @@ h3 {
   .pass-ring {
     align-self: center;
   }
+}
+
+/* Keep run details clear and neutral instead of using the decorative hero art. */
+.run-detail-main {
+  color: #252944;
+  border: 1px solid #e5e7ef;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(37, 40, 74, 0.045);
+}
+
+.run-detail-main::before,
+.run-detail-main::after {
+  display: none;
+}
+
+.run-detail-main .eyebrow,
+.run-detail-main .run-description,
+.run-detail-main dt,
+.run-detail-main .execution-progress span {
+  color: #69708e;
+}
+
+.run-detail-main .run-detail-title h3,
+.run-detail-main dd,
+.run-detail-main .execution-progress strong {
+  color: #252944;
+}
+
+.run-detail-main .run-metadata {
+  border-color: #eff0f5;
+}
+
+.run-detail-main .el-progress-bar__outer {
+  background: #ebeef5;
 }

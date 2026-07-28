@@ -209,6 +209,9 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Reload test cases": "重新加载测试用例",
   "Starting...": "正在启动……",
   "Test run failed": "测试运行启动失败",
+  "Console output": "控制台输出",
+  "Output is recorded here while the command runs.": "命令运行期间，所有输出都会记录在这里。",
+  "Waiting for console output...": "正在等待控制台输出……",
   "Task command center": "任务指挥中心",
   "Plan, assign, and deliver release work from one focused workspace.": "在一个专注的工作区中规划、分配并交付发布工作。",
   "Total tasks": "任务总数",
@@ -1685,8 +1688,8 @@ const App = {
           : "The command process is currently running.",
         suite: `${run.totalProcesses} test case${run.totalProcesses === 1 ? "" : "s"}`,
         device: run.device,
-        environment: appSettings.defaultEnvironment,
         owner: appSettings.defaultOwner,
+        consoleOutput: run.consoleOutput || "",
         status: run.status,
         totalCases: run.totalProcesses,
         executedCases: 0,
@@ -2242,10 +2245,6 @@ const App = {
                   <dd>{{ displayValue(selectedTestRun.suite) }}</dd>
                 </div>
                 <div>
-                  <dt>{{ t('Environment') }}</dt>
-                  <dd>{{ t(selectedTestRun.environment) }}</dd>
-                </div>
-                <div>
                   <dt>{{ t('Owner') }}</dt>
                   <dd>{{ selectedTestRun.owner }}</dd>
                 </div>
@@ -2302,6 +2301,20 @@ const App = {
                 {{ t('View test cases') }}
               </el-button>
             </aside>
+
+            <section
+              v-if="selectedTestRun.liveProcessRun"
+              class="run-console-report"
+            >
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow">{{ t('Console output') }}</p>
+                  <h3>{{ t('Console output') }}</h3>
+                </div>
+                <span>{{ t('Output is recorded here while the command runs.') }}</span>
+              </div>
+              <pre>{{ selectedTestRun.consoleOutput || t('Waiting for console output...') }}</pre>
+            </section>
           </section>
 
           <el-empty v-else :description="t('No test runs match these filters')">

@@ -26,6 +26,8 @@ VENDOR_PACKAGES = frozenset(("vue-3.5.24", "element-plus-2.11.8"))
 HDC_TIMEOUT_SECONDS = 10
 TEST_RUNS = {}
 TEST_RUNS_LOCK = Lock()
+TEST_RUN_LOG_DIRECTORY = APP_DIRECTORY / "logs" / "test-runs"
+TEST_PROCESS_RUNNER = APP_DIRECTORY / "run_test_process.py"
 DEFAULT_SETTINGS = {
     "projectName": "Oh Wemby",
     "releaseName": "Release 2.4",
@@ -279,22 +281,40 @@ def start_test_cases(request_body: dict) -> dict:
         names = ", ".join(missing_names)
         raise RuntimeError(f"Unknown test case selection: {names}")
 
+    run_id = f"TR-{int(time.time() * 1000)}"
     processes = []
     for case_id in case_ids:
         test_case = discovered_cases[case_id]
         case_name = test_case["title"]
-        command = [
+        test_command = [
             str(python_path),
             str(runner_path),
             case_name,
             str(inspection_mode),
         ]
+        log_path = TEST_RUN_LOG_DIRECTORY / f"{run_id}-{case_id}.log"
+        status_path = TEST_RUN_LOG_DIRECTORY / f"{run_id}-{case_id}.status.json"
+        worker_command = [
+            str(python_path),
+            str(TEST_PROCESS_RUNNER),
+            str(log_path),
+            str(status_path),
+            "--",
+            *test_command,
+        ]
         popen_options = {
             "cwd": library_path,
         }
         if os.name == "nt":
+            command = [
+                os.environ.get("COMSPEC", "cmd.exe"),
+                "/k",
+                subprocess.list2cmdline(worker_command),
+            ]
             popen_options["creationflags"] = subprocess.CREATE_NEW_CONSOLE
-        display_command = subprocess.list2cmdline(command)
+        else:
+            command = worker_command
+        display_command = subprocess.list2cmdline(test_command)
         print(
             f"[test run: {run_name.strip()}] cwd: {library_path}\n"
             f"[test case: {case_name}] command: {display_command}",
@@ -313,12 +333,14 @@ def start_test_cases(request_body: dict) -> dict:
                 "testCaseName": case_name,
                 "inspectionMode": inspection_mode,
                 "processId": process.pid,
+                "command": display_command,
+                "_logPath": log_path,
+                "_statusPath": status_path,
                 "_process": process,
             }
         )
 
     started_at = datetime.now().astimezone()
-    run_id = f"TR-{int(time.time() * 1000)}"
     run = {
         "id": run_id,
         "title": run_name.strip(),
@@ -335,8 +357,36 @@ def start_test_cases(request_body: dict) -> dict:
 def serialize_test_run(run: dict) -> dict:
     processes = run["processes"]
     running_count = sum(
-        1 for process_info in processes if process_info["_process"].poll() is None
+        1 for process_info in processes if not process_info["_statusPath"].exists()
     )
+    serialized_processes = []
+    combined_output = []
+    for process_info in processes:
+        try:
+            console_output = process_info["_logPath"].read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+        except OSError:
+            console_output = ""
+        exit_code = None
+        try:
+            exit_code = json.loads(
+                process_info["_statusPath"].read_text(encoding="utf-8")
+            )["exitCode"]
+        except (OSError, json.JSONDecodeError, KeyError, TypeError):
+            pass
+        combined_output.append(
+            f"===== {process_info['testCaseName']} =====\n{console_output}"
+        )
+        serialized_processes.append(
+            {
+                key: value
+                for key, value in process_info.items()
+                if not key.startswith("_")
+            }
+            | {"consoleOutput": console_output, "exitCode": exit_code}
+        )
     return {
         "id": run["id"],
         "title": run["title"],
@@ -346,10 +396,8 @@ def serialize_test_run(run: dict) -> dict:
         "status": "Running" if running_count else "Completed",
         "runningProcesses": running_count,
         "totalProcesses": len(processes),
-        "started": [
-            {key: value for key, value in process_info.items() if key != "_process"}
-            for process_info in processes
-        ],
+        "consoleOutput": "\n\n".join(combined_output),
+        "started": serialized_processes,
     }
 
 
