@@ -32,9 +32,9 @@ TEST_RUNS_LOCK = Lock()
 TEST_RUN_LOG_DIRECTORY = APP_DIRECTORY / "logs" / "test-runs"
 TEST_PROCESS_RUNNER = APP_DIRECTORY / "run_test_process.py"
 DEFAULT_SETTINGS = {
-    "projectName": "菲尔兹UI自动化测试平台",
-    "releaseName": "Release 2.4",
-    "defaultEnvironment": "QA staging",
+    "projectName": "UI自动化测试平台",
+    "releaseName": "FangTian 1.10-1.12",
+    "defaultEnvironment": "HarmonyOS",
     "defaultOwner": "kouyanan 30030842",
     "testCaseLibraryPath": "../Phoebe-main/Testcases",
     "pythonExecutablePath": "../python310/python.exe",

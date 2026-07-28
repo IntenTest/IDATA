@@ -12,18 +12,18 @@ const TABLE_DEFINITIONS = window.OhWembyTableDefinitions;
 const CHINESE_TRANSLATIONS = Object.freeze({
   Overview: "概览",
   Tasks: "任务",
-  Devices: "设备",
+  Devices: "设备管理",
   Projects: "项目",
   "Test Cases": "测试用例",
   "Test Suites": "测试套件",
-  "New Test Run": "新建测试运行",
+  "New Test Run": "新建测试任务",
   Activity: "活动",
   Settings: "设置",
   "Primary navigation": "主导航",
   "New test case": "新建测试用例",
   "New test suite": "新建测试套件",
-  "New test run": "新建测试运行",
-  "Start test run": "开始测试运行",
+  "New test run": "新建测试任务",
+  "Start test run": "开始测试任务",
   "Add demo task": "添加演示任务",
   "Vue is ready": "Vue 已准备就绪",
   "A clear starting point for the next big thing.": "为下一项重要工作提供清晰起点。",
@@ -65,7 +65,7 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Ready to run": "待运行",
   "Awaiting execution": "等待执行",
   "Recent validation": "最近验证",
-  "Latest test runs across the release.": "该版本最新的测试运行。",
+  "Latest test runs across the release.": "该版本最新的测试任务。",
   "View all runs": "查看全部运行",
   "Attention needed": "需要关注",
   "Review these runs before release approval.": "请在批准发布前审查这些运行。",
@@ -75,6 +75,9 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "checks executed": "项检查已执行",
   "Quality at a glance": "管理测试用例",
   "Track coverage, review failures, and keep every release decision tied to a clear test result.": "查看用例覆盖与执行结果。",
+  "Total cases": "用例总数",
+  "Standard cases": "标准用例",
+  "Customized cases": "自定义用例",
   "Pass rate": "通过率",
   Passing: "通过",
   "Needs attention": "需要关注",
@@ -89,7 +92,7 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Supplementary test cases contributed by developers and other team members.": "由开发人员及其他团队成员补充的测试用例。",
   "Search by ID, title, or owner": "按 ID、标题或负责人搜索",
   "Add to Test Suite": "添加到测试套件",
-  "Create Test Run": "创建测试运行",
+  "Create Test Run": "创建测试任务",
   Clear: "清除",
   "No test cases match these filters": "没有符合筛选条件的测试用例",
   Edit: "编辑",
@@ -106,16 +109,16 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Create suite": "创建套件",
   "No test suites match this search": "没有符合搜索条件的测试套件",
   Run: "运行",
-  "Test run is active": "测试运行进行中",
+  "Test run is active": "测试任务进行中",
   "Open test cases": "打开测试用例",
   "Configure another run": "配置另一次运行",
   "View run details": "查看运行详情",
-  "Start another run": "发起新的测试运行",
+  "Start another run": "发起新的测试任务",
   "Quality assurance workflow": "测试工作流",
-  "Manage test runs.": "管理测试运行",
-  "Start a focused test run.": "发起测试运行",
+  "Manage test runs.": "管理测试任务",
+  "Start a focused test run.": "发起新的UI自测试任务",
   "Name the run, choose a target device, and select the test cases for the tester.": "填写名称，选择设备和测试用例。",
-  "Test run name": "测试运行名称",
+  "Test run name": "测试任务名称",
   "Example: Release 2.4 regression": "示例：2.4 版本回归测试",
   Device: "设备",
   "Connected devices": "已连接设备",
@@ -147,14 +150,14 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "No matching test suites": "没有匹配的测试套件",
   Notes: "备注",
   "Add optional instructions or context": "添加可选说明或背景信息",
-  "The run begins in a ready state; no tests execute automatically.": "测试运行将进入就绪状态，不会自动执行任何测试。",
+  "The run begins in a ready state; no tests execute automatically.": "测试任务将进入就绪状态，不会自动执行任何测试。",
   "Run preview": "运行预览",
-  "Untitled test run": "未命名的测试运行",
+  "Untitled test run": "未命名的测试任务",
   "Target device": "目标设备",
   "No device selected": "未选择设备",
   "Ready to start": "可以开始",
   "Setup incomplete": "设置未完成",
-  "The test run can now be started.": "现在可以开始测试运行。",
+  "The test run can now be started.": "现在可以开始测试任务。",
   "Complete the three required fields.": "请完成三个必填字段。",
   "This area is ready for its next workflow.": "此区域已准备好承载下一个工作流。",
   "Edit test case": "编辑测试用例",
@@ -177,7 +180,7 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Enter a test suite name.": "请输入测试套件名称。",
   "Test suite updated.": "测试套件已更新。",
   "Test suite created.": "测试套件已创建。",
-  "Enter a test run name.": "请输入测试运行名称。",
+  "Enter a test run name.": "请输入测试任务名称。",
   "Select a device.": "请选择设备。",
   "Demo task added.": "演示任务已添加。",
   "New task": "新建任务",
@@ -213,7 +216,7 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Test case library unavailable": "测试用例库不可用",
   "Reload test cases": "重新加载测试用例",
   "Starting...": "正在启动……",
-  "Test run failed": "测试运行启动失败",
+  "Test run failed": "测试任务启动失败",
   "Console output": "控制台输出",
   "Output is recorded here while the command runs.": "命令运行期间，所有输出都会记录在这里。",
   "Waiting for console output...": "正在等待控制台输出……",
@@ -293,16 +296,16 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Device coverage confirmed": "设备覆盖范围已确认",
   "Acceptance criteria approved": "验收标准已批准",
   "Final report shared": "最终报告已共享",
-  "Test runs": "测试运行",
-  "Test run history": "测试运行历史",
-  "Recent test runs": "最近的测试运行",
+  "Test runs": "测试任务",
+  "Test run history": "测试任务历史",
+  "Recent test runs": "最近的测试任务",
   "Monitor active runs, review outcomes, and keep release validation moving.": "查看运行进度与执行结果。",
   "Active runs": "进行中的运行",
   "Completed runs": "已完成的运行",
   "Overall pass rate": "总体通过率",
   "Search by run, ID, device, suite, or owner": "按运行、ID、设备、套件或负责人搜索",
   "All run statuses": "全部运行状态",
-  "No test runs match these filters": "没有符合筛选条件的测试运行",
+  "No test runs match these filters": "没有符合筛选条件的测试任务",
   "Run": "运行",
   "Device": "设备",
   "Results": "结果",
@@ -334,8 +337,8 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "One blocked case requires a restored test account before execution can continue.": "一个受阻用例需要恢复测试账户后才能继续执行。",
   "No failures recorded": "未记录失败",
   "Review the recorded failures before closing this run.": "关闭此次运行前，请审查已记录的失败项。",
-  "Test run details": "测试运行详情",
-  "Back to test runs": "返回测试运行",
+  "Test run details": "测试任务详情",
+  "Back to test runs": "返回测试任务",
   "View": "查看",
   Passed: "通过",
   Failed: "失败",
@@ -589,9 +592,9 @@ const HISTORICAL_RUN_DEVICES = [
 ];
 
 const DEFAULT_APP_SETTINGS = Object.freeze({
-  projectName: "菲尔兹UI自动化测试平台",
-  releaseName: "Release 2.4",
-  defaultEnvironment: "QA staging",
+  projectName: "UI自动化测试平台",
+  releaseName: "FangTian 1.10-1.12",
+  defaultEnvironment: "HarmonyOS",
   defaultOwner: "kouyanan 30030842",
   testCaseLibraryPath: "../Phoebe-main/Testcases",
   pythonExecutablePath: "../python310/python.exe",
@@ -639,10 +642,9 @@ function buildHistoricalTestRuns(count) {
 
 const App = {
   setup() {
+    const storedLanguage = window.localStorage.getItem("oh-wemby-language");
     const language = ref(
-      window.localStorage.getItem("oh-wemby-language") === "zh-CN"
-        ? "zh-CN"
-        : "en",
+      storedLanguage === "en" ? "en" : "zh-CN",
     );
     const isChinese = computed(() => language.value === "zh-CN");
     const t = (text) =>
@@ -1062,13 +1064,11 @@ const App = {
         start + suitePageSize.value,
       );
     });
-    const passedTests = computed(
-      () => testCases.value.filter((testCase) => testCase.status === "Passed").length,
+    const standardTestCaseCount = computed(
+      () => testCases.value.filter((testCase) => testCase.category === "Standard").length,
     );
-    const passRate = computed(() =>
-      testCases.value.length
-        ? Math.round((passedTests.value / testCases.value.length) * 100)
-        : 0,
+    const customizedTestCaseCount = computed(
+      () => testCases.value.filter((testCase) => testCase.category === "Customized").length,
     );
     const testRunReady = computed(
       () =>
@@ -1142,7 +1142,7 @@ const App = {
     watch(language, (value) => {
       window.localStorage.setItem("oh-wemby-language", value);
       document.documentElement.lang = value;
-      document.title = "菲尔兹UI自动化测试平台";
+      document.title = "UI自动化测试平台";
     }, { immediate: true });
     watch(activeView, (view) => {
       if (
@@ -1836,8 +1836,8 @@ const App = {
       pageSize,
       paginatedTestCases,
       paginatedTestSuites,
-      passedTests,
-      passRate,
+      standardTestCaseCount,
+      customizedTestCaseCount,
       overallRunPassRate,
       readyTestRuns,
       overviewRecentRuns,
@@ -1903,8 +1903,7 @@ const App = {
   template: `
     <div class="app-shell">
       <aside class="sidebar">
-        <a class="brand" href="#" aria-label="菲尔兹UI自动化测试平台首页">
-          <span class="brand-mark">W</span>
+        <a class="brand" href="#" aria-label="UI自动化测试平台首页">
           <span>{{ appSettings.projectName }}</span>
         </a>
 
@@ -2541,33 +2540,40 @@ const App = {
                 <h2>{{ t('Quality at a glance') }}</h2>
                 <p>{{ t('Track coverage, review failures, and keep every release decision tied to a clear test result.') }}</p>
               </div>
-              <div class="pass-ring">
-                <el-progress
-                  type="circle"
-                  :percentage="passRate"
-                  :width="116"
-                  :stroke-width="9"
-                  color="#63d3a1"
-                />
-                <span>{{ t('Pass rate') }}</span>
+              <div
+                class="run-overview-stats test-case-overview-stats"
+                :aria-label="t('Test cases')"
+              >
+                <div>
+                  <span>{{ t('Total cases') }}</span>
+                  <strong>{{ testCases.length }}</strong>
+                </div>
+                <div>
+                  <span>{{ t('Standard cases') }}</span>
+                  <strong>{{ standardTestCaseCount }}</strong>
+                </div>
+                <div>
+                  <span>{{ t('Customized cases') }}</span>
+                  <strong>{{ customizedTestCaseCount }}</strong>
+                </div>
               </div>
             </article>
 
             <article class="test-metric">
               <span class="metric-icon metric-purple">✓</span>
               <div>
-                <strong>{{ passedTests }}</strong>
-                <span>{{ t('Passing') }}</span>
+                <strong>{{ standardTestCaseCount }}</strong>
+                <span>{{ t('Standard test cases') }}</span>
               </div>
               <small>{{ isChinese ? '共 ' + testCases.length + ' 项' : 'of ' + testCases.length + ' total' }}</small>
             </article>
             <article class="test-metric">
               <span class="metric-icon metric-coral">!</span>
               <div>
-                <strong>{{ testCases.length - passedTests }}</strong>
-                <span>{{ t('Needs attention') }}</span>
+                <strong>{{ customizedTestCaseCount }}</strong>
+                <span>{{ t('Customized test cases') }}</span>
               </div>
-              <small>{{ t('failed, blocked or pending') }}</small>
+              <small>{{ t('Contact an administrator to access customized test cases.') }}</small>
             </article>
           </section>
 
