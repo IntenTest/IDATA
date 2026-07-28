@@ -108,6 +108,8 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Test run is active": "测试运行进行中",
   "Open test cases": "打开测试用例",
   "Configure another run": "配置另一次运行",
+  "View run details": "查看运行详情",
+  "Start another run": "发起新的测试运行",
   "Quality assurance workflow": "质量保证工作流",
   "Start a focused test run.": "启动专项测试运行。",
   "Name the run, choose a target device, and select the test cases for the tester.": "命名测试运行、选择目标设备，并为测试人员选择测试用例。",
@@ -2694,11 +2696,15 @@ const App = {
               {{ selectedDevice?.name || selectedDevice?.model || newTestRun.device }}.
             </p>
             <div class="run-success-actions">
-              <el-button type="primary" size="large" @click="selectView('Test Cases')">
-                {{ t('Open test cases') }}
+              <el-button
+                type="primary"
+                size="large"
+                @click="selectView('Test Run Details', { runId: testRunExecution.id })"
+              >
+                {{ t('View run details') }}
               </el-button>
               <el-button size="large" @click="testRunStarted = false">
-                {{ t('Configure another run') }}
+                {{ t('Start another run') }}
               </el-button>
             </div>
           </section>
