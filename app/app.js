@@ -186,8 +186,10 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Default owner": "默认负责人",
   "Test case library path": "测试用例库路径",
   "Python executable path": "Python 可执行文件路径",
+  "run_testcases path": "run_testcases 路径",
   "Include all .py files in this directory and its subdirectories.": "包含此目录及其所有子目录中的 .py 文件。",
   "Must point to a python.exe file.": "必须指向 python.exe 文件。",
+  "The Python runner that receives the selected case name and inspection mode.": "接收所选用例名称和检查模式的 Python 运行程序。",
   "Auto-load devices": "自动加载设备",
   "Refresh interval": "刷新间隔",
   "Table page size": "表格每页数量",
@@ -549,6 +551,7 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
   defaultOwner: "kouyanan 30030842",
   testCaseLibraryPath: "",
   pythonExecutablePath: "",
+  runTestCasesPath: "",
   autoLoadDevices: true,
   deviceRefreshSeconds: 30,
   tablePageSize: 20,
@@ -2918,6 +2921,18 @@ const App = {
                   />
                   <span class="settings-field-help">
                     {{ t('Must point to a python.exe file.') }}
+                  </span>
+                </el-form-item>
+                <el-form-item
+                  class="settings-path-field"
+                  :label="t('run_testcases path')"
+                >
+                  <el-input
+                    v-model="appSettings.runTestCasesPath"
+                    placeholder="C:\\path\\to\\run_testcases.py"
+                  />
+                  <span class="settings-field-help">
+                    {{ t('The Python runner that receives the selected case name and inspection mode.') }}
                   </span>
                 </el-form-item>
                 <el-form-item :label="t('Refresh interval')">

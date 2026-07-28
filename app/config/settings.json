@@ -5,6 +5,7 @@
   "defaultOwner": "kouyanan 30030842",
   "testCaseLibraryPath": "",
   "pythonExecutablePath": "",
+  "runTestCasesPath": "",
   "autoLoadDevices": true,
   "deviceRefreshSeconds": 30,
   "tablePageSize": 20

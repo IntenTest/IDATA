@@ -33,6 +33,7 @@ DEFAULT_SETTINGS = {
     "defaultOwner": "kouyanan 30030842",
     "testCaseLibraryPath": "",
     "pythonExecutablePath": "",
+    "runTestCasesPath": "",
     "autoLoadDevices": True,
     "deviceRefreshSeconds": 30,
     "tablePageSize": 20,
@@ -44,6 +45,7 @@ SETTING_FIELD_TYPES = {
     "defaultOwner": str,
     "testCaseLibraryPath": str,
     "pythonExecutablePath": str,
+    "runTestCasesPath": str,
     "autoLoadDevices": bool,
     "deviceRefreshSeconds": int,
     "tablePageSize": int,
@@ -247,19 +249,25 @@ def start_test_cases(request_body: dict) -> dict:
     settings = read_settings()
     raw_library_path = settings["testCaseLibraryPath"].strip()
     raw_python_path = settings["pythonExecutablePath"].strip()
+    raw_runner_path = settings["runTestCasesPath"].strip()
     if not raw_library_path:
         raise RuntimeError("Set the test case library path in Settings.")
     if not raw_python_path:
         raise RuntimeError("Set the Python executable path in Settings.")
+    if not raw_runner_path:
+        raise RuntimeError("Set the run_testcases path in Settings.")
 
     library_path = configured_path(raw_library_path)
     python_path = configured_path(raw_python_path)
+    runner_path = configured_path(raw_runner_path)
     if not library_path.is_dir():
         raise RuntimeError(f"Test case library directory was not found: {library_path}")
     if not python_path.is_file():
         raise RuntimeError(f"Python executable was not found: {python_path}")
     if python_path.name.lower() != "python.exe":
         raise RuntimeError("Python executable path must end with python.exe.")
+    if not runner_path.is_file():
+        raise RuntimeError(f"run_testcases file was not found: {runner_path}")
 
     discovered_cases = {
         test_case["id"]: test_case
@@ -275,11 +283,17 @@ def start_test_cases(request_body: dict) -> dict:
     for case_id in case_ids:
         test_case = discovered_cases[case_id]
         case_name = test_case["title"]
-        case_script = f"{test_case['path']}.py"
-        command = [str(python_path), case_script, str(inspection_mode)]
+        command = [
+            str(python_path),
+            str(runner_path),
+            case_name,
+            str(inspection_mode),
+        ]
         popen_options = {
             "cwd": library_path,
         }
+        if os.name == "nt":
+            popen_options["creationflags"] = subprocess.CREATE_NEW_CONSOLE
         display_command = subprocess.list2cmdline(command)
         print(
             f"[test run: {run_name.strip()}] cwd: {library_path}\n"
