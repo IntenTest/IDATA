@@ -209,10 +209,20 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Reset defaults": "恢复默认值",
   "Settings restored to defaults.": "设置已恢复为默认值。",
   "Settings saved.": "设置已保存。",
+  "Inspection model": "检测模型",
+  "Configure the model API used by inspection features.": "配置检测功能使用的模型接口。",
+  "Model configuration file": "模型配置文件",
+  "API base URL": "API 基础地址",
+  "API key": "API 密钥",
+  "Model name": "模型名称",
+  "Load model configuration": "重新加载模型配置",
+  "Save model configuration": "保存模型配置",
+  "Model configuration unavailable": "模型配置不可用",
+  "Model configuration saved.": "模型配置已保存。",
   "Inspection mode": "检查模式",
-  "Execute only": "仅执行",
-  "Static inspection": "静态检测",
-  "Motion inspection": "动效检测",
+  "Execution log inspection": "执行日志检测",
+  "Log and screenshot inspection": "日志&截图检测",
+  "Log and recording inspection": "日志&录屏检测",
   "Test case library unavailable": "测试用例库不可用",
   "Reload test cases": "重新加载测试用例",
   "Starting...": "正在启动……",
@@ -698,6 +708,10 @@ const App = {
     const settingsSaving = ref(false);
     const settingsError = ref("");
     const settingsSavedAt = ref("");
+    const modelConfig = reactive({ api_base: "", api_key: "", model_name: "" });
+    const modelConfigLoading = ref(false);
+    const modelConfigSaving = ref(false);
+    const modelConfigError = ref("");
     let settingsLoaded = false;
     let applyingSettings = false;
     let settingsSaveTimer = 0;
@@ -1154,6 +1168,7 @@ const App = {
       }
       if (view === "Settings") {
         loadSettings();
+        loadModelConfig();
       }
       if (["Test Cases", "New Test Run"].includes(view) && settingsLoaded) {
         loadTestCases();
@@ -1349,6 +1364,45 @@ const App = {
           error instanceof Error ? error.message : "Unable to save settings.";
       } finally {
         settingsSaving.value = false;
+      }
+    }
+
+    async function loadModelConfig() {
+      modelConfigLoading.value = true;
+      modelConfigError.value = "";
+      try {
+        const response = await fetch("/api/model-config", { cache: "no-store" });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || `The model configuration service returned HTTP ${response.status}.`);
+        }
+        Object.assign(modelConfig, result.modelConfig || {});
+      } catch (error) {
+        modelConfigError.value = error instanceof Error ? error.message : "Unable to load the model configuration.";
+      } finally {
+        modelConfigLoading.value = false;
+      }
+    }
+
+    async function saveModelConfig() {
+      modelConfigSaving.value = true;
+      modelConfigError.value = "";
+      try {
+        const response = await fetch("/api/model-config", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ modelConfig }),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || `The model configuration service returned HTTP ${response.status}.`);
+        }
+        Object.assign(modelConfig, result.modelConfig || {});
+        ElementPlus.ElMessage({ message: t("Model configuration saved."), type: "success" });
+      } catch (error) {
+        modelConfigError.value = error instanceof Error ? error.message : "Unable to save the model configuration.";
+      } finally {
+        modelConfigSaving.value = false;
       }
     }
 
@@ -1894,6 +1948,12 @@ const App = {
       settingsLoading,
       settingsSaving,
       settingsSavedAt,
+      modelConfig,
+      modelConfigError,
+      modelConfigLoading,
+      modelConfigSaving,
+      loadModelConfig,
+      saveModelConfig,
       today,
       changeTestCaseSort,
       deviceOptions: devices,
@@ -2835,7 +2895,7 @@ const App = {
             <p>
               {{ testRunExecution?.started?.length || selectedRunCaseCount }}
               test cases started in
-              {{ t(['Execute only', 'Static inspection', 'Motion inspection'][newTestRun.inspectionMode]) }}
+              {{ t(['Execution log inspection', 'Log and screenshot inspection', 'Log and recording inspection'][newTestRun.inspectionMode]) }}
               mode on
               {{ selectedDevice?.name || selectedDevice?.model || newTestRun.device }}.
             </p>
@@ -2935,13 +2995,13 @@ const App = {
                     class="inspection-mode"
                   >
                     <el-radio-button :value="0">
-                      {{ t('Execute only') }}
+                      {{ t('Execution log inspection') }}
                     </el-radio-button>
                     <el-radio-button :value="1">
-                      {{ t('Static inspection') }}
+                      {{ t('Log and screenshot inspection') }}
                     </el-radio-button>
                     <el-radio-button :value="2">
-                      {{ t('Motion inspection') }}
+                      {{ t('Log and recording inspection') }}
                     </el-radio-button>
                   </el-radio-group>
                 </el-form-item>
@@ -2966,7 +3026,7 @@ const App = {
                   </el-button>
                   <span>
                     {{ selectedRunCaseCount }} test cases ·
-                    {{ t(['Execute only', 'Static inspection', 'Motion inspection'][newTestRun.inspectionMode]) }}
+                    {{ t(['Execution log inspection', 'Log and screenshot inspection', 'Log and recording inspection'][newTestRun.inspectionMode]) }}
                   </span>
                 </div>
               </el-form>
@@ -2986,7 +3046,7 @@ const App = {
               <div class="run-build">
                 <span>{{ t('Inspection mode') }}</span>
                 <strong>
-                  {{ t(['Execute only', 'Static inspection', 'Motion inspection'][newTestRun.inspectionMode]) }}
+                  {{ t(['Execution log inspection', 'Log and screenshot inspection', 'Log and recording inspection'][newTestRun.inspectionMode]) }}
                 </strong>
               </div>
               <div class="run-selection">
@@ -3139,6 +3199,50 @@ const App = {
                       ? t('Saved') + ' · ' + settingsSavedAt
                       : t('Saved') }}
                 </span>
+              </div>
+            </el-form>
+
+            <el-form class="settings-form model-config-form" label-position="top" v-loading="modelConfigLoading">
+              <div class="settings-section-heading">
+                <div>
+                  <p class="eyebrow">{{ t('Inspection model') }}</p>
+                  <h3>{{ t('Configure the model API used by inspection features.') }}</h3>
+                </div>
+                <div class="settings-source-path">
+                  <span>{{ t('Model configuration file') }}</span>
+                  <strong>../../Phoebe-main/Phoebe/tools/llm_analyzer.py</strong>
+                </div>
+              </div>
+
+              <el-alert
+                v-if="modelConfigError"
+                class="settings-alert"
+                type="error"
+                :title="t('Model configuration unavailable')"
+                :description="modelConfigError"
+                show-icon
+                :closable="false"
+              />
+
+              <div class="settings-grid model-config-grid">
+                <el-form-item :label="t('API base URL')">
+                  <el-input v-model="modelConfig.api_base" placeholder="https://api.example.com/v1" />
+                </el-form-item>
+                <el-form-item :label="t('Model name')">
+                  <el-input v-model="modelConfig.model_name" placeholder="model-name" />
+                </el-form-item>
+                <el-form-item class="settings-path-field" :label="t('API key')">
+                  <el-input v-model="modelConfig.api_key" type="password" show-password autocomplete="off" />
+                </el-form-item>
+              </div>
+
+              <div class="settings-actions">
+                <el-button plain @click="loadModelConfig">
+                  {{ t('Load model configuration') }}
+                </el-button>
+                <el-button type="primary" :loading="modelConfigSaving" @click="saveModelConfig">
+                  {{ t('Save model configuration') }}
+                </el-button>
               </div>
             </el-form>
           </section>

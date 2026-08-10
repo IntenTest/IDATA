@@ -2835,6 +2835,41 @@ h3 {
   padding-top: 18px;
 }
 
+.settings-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.settings-section-heading h3 {
+  margin: 4px 0 0;
+  color: #252944;
+  font-size: 20px;
+}
+
+.settings-source-path {
+  display: flex;
+  max-width: 420px;
+  flex-direction: column;
+  gap: 5px;
+  color: #858ba3;
+  font-size: 11px;
+  text-align: right;
+}
+
+.settings-source-path strong {
+  overflow-wrap: anywhere;
+  color: #555d7d;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+}
+
+.model-config-form .settings-alert {
+  margin-bottom: 20px;
+}
+
 .settings-save-state {
   margin-left: auto;
 }
