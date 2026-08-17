@@ -222,6 +222,10 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Save model configuration": "保存模型配置",
   "Model configuration unavailable": "模型配置不可用",
   "Model configuration saved.": "模型配置已保存。",
+  "Model configuration incomplete": "模型配置不完整",
+  "Configure the API base URL, model name, and API key before creating a test run.": "新建测试任务前，请先配置 API 基础地址、模型名称和 API 密钥。",
+  "Go to settings": "前往配置",
+  "Continue": "继续",
   "Inspection mode": "检查模式",
   "Execution log inspection": "执行日志检测",
   "Log and screenshot inspection": "日志&截图检测",
@@ -1261,6 +1265,9 @@ const App = {
         loadSettings();
         loadModelConfig();
       }
+      if (view === "New Test Run") {
+        checkModelConfigForNewTestRun();
+      }
       if (["Test Cases", "New Test Run"].includes(view) && settingsLoaded) {
         loadTestCases();
       }
@@ -1500,10 +1507,44 @@ const App = {
           throw new Error(result.error || `The model configuration service returned HTTP ${response.status}.`);
         }
         Object.assign(modelConfig, result.modelConfig || {});
+        return true;
       } catch (error) {
         modelConfigError.value = error instanceof Error ? error.message : "Unable to load the model configuration.";
+        return false;
       } finally {
         modelConfigLoading.value = false;
+      }
+    }
+
+    async function checkModelConfigForNewTestRun() {
+      const loaded = await loadModelConfig();
+      const requiredValues = [
+        modelConfig.api_base,
+        modelConfig.model_name,
+        modelConfig.api_key,
+      ];
+      if (
+        loaded &&
+        requiredValues.every(
+          (value) => typeof value === "string" && value.trim(),
+        )
+      ) {
+        return;
+      }
+
+      try {
+        await ElementPlus.ElMessageBox.confirm(
+          t("Configure the API base URL, model name, and API key before creating a test run."),
+          t("Model configuration incomplete"),
+          {
+            confirmButtonText: t("Go to settings"),
+            cancelButtonText: t("Continue"),
+            type: "warning",
+          },
+        );
+        selectView("Settings");
+      } catch (_error) {
+        // The user chose to continue configuring the test run.
       }
     }
 
