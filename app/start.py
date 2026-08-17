@@ -5,7 +5,7 @@ from datetime import datetime
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from urllib.parse import unquote, urlparse
 import ast
 import csv
@@ -610,28 +610,18 @@ def start_test_cases(request_body: dict) -> dict:
         else:
             command = worker_command
         display_command = subprocess.list2cmdline(test_command)
-        print(
-            f"[test run: {run_name.strip()}] cwd: {library_path}\n"
-            f"[test case: {case_name}] command: {display_command}",
-            flush=True,
-        )
-        try:
-            process = subprocess.Popen(command, **popen_options)
-        except OSError as error:
-            raise RuntimeError(
-                f"Unable to start {case_name} with command "
-                f"{display_command}: {error}"
-            ) from error
         processes.append(
             {
                 "testCase": case_id,
                 "testCaseName": case_name,
                 "inspectionMode": inspection_mode,
-                "processId": process.pid,
+                "processId": None,
                 "command": display_command,
                 "_logPath": log_path,
                 "_statusPath": status_path,
-                "_process": process,
+                "_command": command,
+                "_popenOptions": popen_options,
+                "_state": "Pending",
             }
         )
 
@@ -647,7 +637,46 @@ def start_test_cases(request_body: dict) -> dict:
     }
     with TEST_RUNS_LOCK:
         TEST_RUNS[run_id] = run
+    Thread(
+        target=execute_test_run_sequentially,
+        args=(run,),
+        daemon=True,
+        name=f"test-run-{run_id}",
+    ).start()
     return serialize_test_run(run)
+
+
+def execute_test_run_sequentially(run: dict) -> None:
+    """Execute every selected case in order, with at most one active process."""
+    for process_info in run["processes"]:
+        process_info["_state"] = "Running"
+        print(
+            f"[test run: {run['title']}] cwd: {run['libraryPath']}\n"
+            f"[test case: {process_info['testCaseName']}] command: "
+            f"{process_info['command']}",
+            flush=True,
+        )
+        try:
+            process = subprocess.Popen(
+                process_info["_command"],
+                **process_info["_popenOptions"],
+            )
+            process_info["_process"] = process
+            process_info["processId"] = process.pid
+            while not process_info["_statusPath"].exists():
+                time.sleep(0.2)
+        except OSError as error:
+            message = (
+                f"Unable to start {process_info['testCaseName']} with command "
+                f"{process_info['command']}: {error}\n"
+            )
+            process_info["_logPath"].write_text(message, encoding="utf-8")
+            process_info["_statusPath"].write_text(
+                json.dumps({"exitCode": 1}),
+                encoding="utf-8",
+            )
+        finally:
+            process_info["_state"] = "Finished"
 
 
 def console_marker(console_output: str, label: str, expected: str) -> bool:
@@ -768,12 +797,14 @@ def evaluate_test_case(
 
 def serialize_test_run(run: dict) -> dict:
     processes = run["processes"]
-    running_count = sum(
-        1 for process_info in processes if not process_info["_statusPath"].exists()
+    unfinished_count = sum(
+        1 for process_info in processes
+        if process_info.get("_state") in {"Pending", "Running"}
     )
     serialized_processes = []
     combined_output = []
     for process_info in processes:
+        process_state = process_info.get("_state", "Finished")
         try:
             console_output = process_info["_logPath"].read_text(
                 encoding="utf-8",
@@ -788,11 +819,15 @@ def serialize_test_run(run: dict) -> dict:
             )["exitCode"]
         except (OSError, json.JSONDecodeError, KeyError, TypeError):
             pass
-        evaluation = evaluate_test_case(
-            run,
-            process_info,
-            console_output,
-            exit_code,
+        evaluation = (
+            {
+                "result": "Pending",
+                "checks": [],
+                "reportUrl": None,
+                "reportLocation": None,
+            }
+            if process_state == "Pending"
+            else evaluate_test_case(run, process_info, console_output, exit_code)
         )
         combined_output.append(
             f"===== {process_info['testCaseName']} =====\n{console_output}"
@@ -829,12 +864,12 @@ def serialize_test_run(run: dict) -> dict:
         "startedAt": run["startedAt"],
         "status": (
             "Running"
-            if running_count
+            if unfinished_count
             else "Failed"
             if failed_count
             else "Completed"
         ),
-        "runningProcesses": running_count,
+        "runningProcesses": unfinished_count,
         "totalProcesses": total_processes,
         "executedProcesses": len(finished_processes),
         "passedProcesses": passed_count,
@@ -894,6 +929,8 @@ def open_test_report(run_id: str, case_id: str) -> str:
 
 
 class AppRequestHandler(SimpleHTTPRequestHandler):
+    network_zone = "blue"
+
     def do_GET(self) -> None:
         request_path = urlparse(self.path).path
         if request_path == "/api/devices":
@@ -916,7 +953,10 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
 
         if request_path == "/api/settings":
             try:
-                result = {"settings": read_settings()}
+                result = {
+                    "settings": read_settings(),
+                    "networkZone": self.network_zone,
+                }
                 status = 200
             except RuntimeError as error:
                 result = {"error": str(error)}
@@ -1091,6 +1131,7 @@ def main() -> None:
 
     try:
         settings, network_zone = apply_network_zone_repository()
+        AppRequestHandler.network_zone = network_zone
         print(
             f"Network zone: {network_zone}; test case repository: "
             f"{settings['testCaseRepositoryUrl']}"

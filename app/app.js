@@ -341,6 +341,7 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Executed": "已执行",
   "Total": "总计",
   "Running": "运行中",
+  "Pending": "等待执行",
   "Ready": "就绪",
   "View test cases": "查看测试用例",
   "Release 2.4 full regression": "2.4 版本完整回归测试",
@@ -901,7 +902,7 @@ const App = {
         done: true,
       },
       ...buildHistoricalTestRuns(18),
-    ]);
+    ].map((run) => ({ ...run, demoData: true })));
     const tasks = testRuns;
     const testCases = ref([]);
     const testSuites = ref([
@@ -951,7 +952,7 @@ const App = {
         updated: "2 days ago",
       },
       ...buildGeneratedTestSuites(200, testCases.value),
-    ]);
+    ].map((suite) => ({ ...suite, demoData: true })));
     const newTestCase = reactive({
       title: "",
       owner: "",
@@ -1428,6 +1429,17 @@ const App = {
       }, 0);
     }
 
+    function applyNetworkZoneDefaults(networkZone) {
+      if (networkZone !== "yellow") {
+        return;
+      }
+      testRuns.value = testRuns.value.filter((run) => !run.demoData);
+      testSuites.value = testSuites.value.filter((suite) => !suite.demoData);
+      if (!testRuns.value.some((run) => run.id === selectedTestRunId.value)) {
+        selectedTestRunId.value = "";
+      }
+    }
+
     async function loadSettings() {
       settingsLoading.value = true;
       settingsError.value = "";
@@ -1439,6 +1451,7 @@ const App = {
           throw new Error(result.error || `The settings service returned HTTP ${response.status}.`);
         }
         applySettings(result.settings || {});
+        applyNetworkZoneDefaults(result.networkZone);
         settingsLoaded = true;
         await loadTestCases();
       } catch (error) {
@@ -1648,7 +1661,7 @@ const App = {
       return {
         Completed: "success",
         Failed: "danger",
-        Running: "primary",
+        Running: "warning",
         Blocked: "danger",
         Ready: "info",
       }[status] || "info";
@@ -2609,7 +2622,9 @@ const App = {
                         ? 'success'
                         : testCase.result === 'Failed'
                           ? 'danger'
-                          : 'primary'"
+                          : testCase.result === 'Running'
+                            ? 'warning'
+                            : 'info'"
                       effect="light"
                       round
                     >
