@@ -29,6 +29,8 @@ SETTINGS_PATH = APP_DIRECTORY / "config" / "settings.json"
 MODEL_CONFIG_PATH = (
     APP_DIRECTORY / ".." / ".." / "Phoebe-main" / "Phoebe" / "tools" / "llm_analyzer.py"
 ).resolve()
+DEFAULT_MODEL_NAME = "Qwen3.8-27B-Q4"
+MODEL_API_KEY_ENVIRONMENT_VARIABLE = "OHWEMBY_MODEL_API_KEY"
 PID_PATH = APP_DIRECTORY / ".ohwemby.pid"
 VENDOR_PACKAGES = frozenset(("vue-3.5.24", "element-plus-2.11.8"))
 HDC_TIMEOUT_SECONDS = 10
@@ -236,8 +238,11 @@ def read_model_config() -> dict:
     _, config = model_config_assignment(source)
     return {
         "api_base": str(config.get("api_base", "")),
-        "api_key": str(config.get("api_key", "")),
-        "model_name": str(config.get("model_name", "")),
+        "api_key": os.environ.get(
+            MODEL_API_KEY_ENVIRONMENT_VARIABLE,
+            str(config.get("api_key", "")),
+        ),
+        "model_name": str(config.get("model_name") or DEFAULT_MODEL_NAME),
     }
 
 

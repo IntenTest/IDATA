@@ -14,6 +14,10 @@ Open `http://localhost:54321` in Google Chrome. If another process is listening
 on port `54321`, the launcher exits with a clear error. Stop the existing
 process and run the launcher again.
 
+The inspection model defaults to `Qwen3.8-27B-Q4`. Supply its API key through
+the `OHWEMBY_MODEL_API_KEY` environment variable so credentials never enter
+Git history.
+
 To stop the local application from another terminal:
 
 ```shell
