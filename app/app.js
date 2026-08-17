@@ -629,7 +629,7 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
   defaultOwner: "kouyanan 30030842",
   testCaseRepositoryUrl: "https://codehub-dg-y.huawei.com/k30030842/Testcases.git",
   testCaseLibraryPath: "Testcases",
-  pythonExecutablePath: "../python310/python.exe",
+  pythonExecutablePath: "python310/python.exe",
   runTestCasesPath: "../Phoebe-main/Testcases/run_testcase.py",
   autoLoadDevices: true,
   deviceRefreshSeconds: 30,

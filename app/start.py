@@ -50,7 +50,7 @@ DEFAULT_SETTINGS = {
     "defaultOwner": "kouyanan 30030842",
     "testCaseRepositoryUrl": DEFAULT_TEST_CASE_REPOSITORY_URL,
     "testCaseLibraryPath": "Testcases",
-    "pythonExecutablePath": "../python310/python.exe",
+    "pythonExecutablePath": "python310/python.exe",
     "runTestCasesPath": "../Phoebe-main/Testcases/run_testcase.py",
     "autoLoadDevices": True,
     "deviceRefreshSeconds": 30,
