@@ -33,6 +33,12 @@ PID_PATH = APP_DIRECTORY / ".ohwemby.pid"
 VENDOR_PACKAGES = frozenset(("vue-3.5.24", "element-plus-2.11.8"))
 HDC_TIMEOUT_SECONDS = 10
 GIT_SYNC_TIMEOUT_SECONDS = 120
+NETWORK_ZONE_PROBE_HOST = "10.90.65.189"
+NETWORK_ZONE_PROBE_TIMEOUT_SECONDS = 3
+DEFAULT_TEST_CASE_REPOSITORY_URL = (
+    "https://codehub-dg-y.huawei.com/k30030842/Testcases.git"
+)
+FALLBACK_TEST_CASE_REPOSITORY_URL = "https://github.com/IntenTest/Testcases.git"
 TEST_RUNS = {}
 TEST_RUNS_LOCK = Lock()
 TEST_RUN_LOG_DIRECTORY = APP_DIRECTORY / "logs" / "test-runs"
@@ -42,7 +48,7 @@ DEFAULT_SETTINGS = {
     "releaseName": "FangTian 1.10-1.12",
     "defaultEnvironment": "HarmonyOS",
     "defaultOwner": "kouyanan 30030842",
-    "testCaseRepositoryUrl": "https://github.com/IntenTest/Testcases.git",
+    "testCaseRepositoryUrl": DEFAULT_TEST_CASE_REPOSITORY_URL,
     "testCaseLibraryPath": "Testcases",
     "pythonExecutablePath": "../python310/python.exe",
     "runTestCasesPath": "../Phoebe-main/Testcases/run_testcase.py",
@@ -279,6 +285,38 @@ def configured_path(raw_path: str) -> Path:
     return path.resolve()
 
 
+def detect_network_zone() -> str:
+    command = (
+        ["ping", "-n", "1", "-w", "3000", NETWORK_ZONE_PROBE_HOST]
+        if os.name == "nt"
+        else ["ping", "-c", "1", NETWORK_ZONE_PROBE_HOST]
+    )
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            check=False,
+            timeout=NETWORK_ZONE_PROBE_TIMEOUT_SECONDS,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return "blue"
+    return "yellow" if result.returncode == 0 else "blue"
+
+
+def apply_network_zone_repository() -> tuple[dict, str]:
+    zone = detect_network_zone()
+    repository_url = (
+        DEFAULT_TEST_CASE_REPOSITORY_URL
+        if zone == "yellow"
+        else FALLBACK_TEST_CASE_REPOSITORY_URL
+    )
+    settings = read_settings()
+    if settings["testCaseRepositoryUrl"] != repository_url:
+        settings["testCaseRepositoryUrl"] = repository_url
+        write_settings(settings)
+    return settings, zone
+
+
 def run_git(command: list[str], *, cwd: Path | None = None) -> str:
     try:
         result = subprocess.run(
@@ -318,22 +356,53 @@ def sync_test_case_repository(settings: dict | None = None) -> dict:
             raise RuntimeError(
                 f"The test case library path exists but is not a Git repository: {library_path}"
             )
+    repository_urls = [repository_url]
+    errors = []
+    output = ""
+    selected_url = ""
+
     if git_directory.is_dir():
-        current_url = run_git(["remote", "get-url", "origin"], cwd=library_path)
-        if current_url != repository_url:
-            run_git(["remote", "set-url", "origin", repository_url], cwd=library_path)
-        output = run_git(["pull", "--ff-only"], cwd=library_path)
+        original_url = run_git(["remote", "get-url", "origin"], cwd=library_path)
+        for candidate_url in repository_urls:
+            try:
+                run_git(["remote", "set-url", "origin", candidate_url], cwd=library_path)
+                output = run_git(["pull", "--ff-only"], cwd=library_path)
+                selected_url = candidate_url
+                break
+            except RuntimeError as error:
+                errors.append(str(error))
+        if not selected_url:
+            run_git(["remote", "set-url", "origin", original_url], cwd=library_path)
         action = "updated"
     else:
         library_path.parent.mkdir(parents=True, exist_ok=True)
-        run_git(["clone", "--", repository_url, str(library_path)])
-        output = "Repository cloned."
+        for candidate_url in repository_urls:
+            try:
+                with tempfile.TemporaryDirectory(
+                    dir=library_path.parent,
+                    prefix=".testcases-clone-",
+                ) as temp_directory:
+                    clone_path = Path(temp_directory) / "repository"
+                    run_git(["clone", "--", candidate_url, str(clone_path)])
+                    if library_path.is_dir():
+                        library_path.rmdir()
+                    clone_path.replace(library_path)
+                output = "Repository cloned."
+                selected_url = candidate_url
+                break
+            except (RuntimeError, OSError) as error:
+                errors.append(str(error))
         action = "cloned"
+
+    if not selected_url:
+        raise RuntimeError(errors[-1] if errors else "Unable to update the test case repository.")
 
     return {
         "action": action,
         "message": output or "The test case repository is up to date.",
         "path": str(library_path),
+        "repositoryUrl": selected_url,
+        "usedFallback": False,
     }
 
 
@@ -1026,7 +1095,12 @@ def main() -> None:
         raise SystemExit(1)
 
     try:
-        sync_result = sync_test_case_repository()
+        settings, network_zone = apply_network_zone_repository()
+        print(
+            f"Network zone: {network_zone}; test case repository: "
+            f"{settings['testCaseRepositoryUrl']}"
+        )
+        sync_result = sync_test_case_repository(settings)
         print(f"Test case repository {sync_result['action']}: {sync_result['path']}")
     except (RuntimeError, OSError) as error:
         print(f"Warning: unable to update the test case repository: {error}", file=sys.stderr)

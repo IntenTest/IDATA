@@ -229,7 +229,8 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Test case library unavailable": "测试用例库不可用",
   "Reload test cases": "重新加载测试用例",
   "Update test case library": "更新用例库",
-  "Test case library updated.": "测试用例库已更新。",
+  "Test case library updated.": "用例库已更新",
+  Close: "关闭",
   "Mapping validation": "映射表检查",
   "Mapping consistency check": "用例一致性检查",
   "The following cases are not aligned between the mapping and repository.": "以下用例在映射表与代码仓库中不一致。",
@@ -625,7 +626,7 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
   releaseName: "FangTian 1.10-1.12",
   defaultEnvironment: "HarmonyOS",
   defaultOwner: "kouyanan 30030842",
-  testCaseRepositoryUrl: "https://github.com/IntenTest/Testcases.git",
+  testCaseRepositoryUrl: "https://codehub-dg-y.huawei.com/k30030842/Testcases.git",
   testCaseLibraryPath: "Testcases",
   pythonExecutablePath: "../python310/python.exe",
   runTestCasesPath: "../Phoebe-main/Testcases/run_testcase.py",
@@ -770,8 +771,7 @@ const App = {
     const testCasesError = ref("");
     const mappingValidationVisible = ref(false);
     const mappingValidation = ref({
-      mappingFile: "",
-      discrepancies: [],
+      publishedCount: 0,
     });
     const testRunSearchQuery = ref("");
     const testRunStatusFilter = ref("");
@@ -1598,18 +1598,13 @@ const App = {
           );
         }
         testCases.value = Array.isArray(result.testCases) ? result.testCases : [];
-        mappingValidation.value = result.mappingValidation || {
-          mappingFile: "",
-          discrepancies: [],
+        mappingValidation.value = {
+          publishedCount: testCases.value.length,
         };
         mappingValidationVisible.value = true;
         newTestRun.selections = newTestRun.selections.filter((selection) =>
           testCases.value.some((testCase) => testCase.id === selection),
         );
-        ElementPlus.ElMessage({
-          message: t("Test case library updated."),
-          type: "success",
-        });
       } catch (error) {
         testCasesError.value =
           error instanceof Error ? error.message : "Unable to update the test case library.";
@@ -3464,53 +3459,15 @@ const App = {
 
       <el-dialog
         v-model="mappingValidationVisible"
-        :title="t('Mapping consistency check')"
-        width="min(980px, calc(100vw - 32px))"
-        top="5vh"
+        :title="t('Test case library updated.')"
+        width="min(460px, calc(100vw - 32px))"
       >
-        <p class="mapping-file">
-          <strong>{{ t('Mapping file') }}:</strong>
-          {{ mappingValidation.mappingFile }}
-        </p>
-
-        <section class="mapping-validation-section">
-          <el-alert
-            v-if="!mappingValidation.discrepancies.length"
-            type="success"
-            :title="t('The mapping and repository are fully aligned.')"
-            show-icon
-            :closable="false"
-          />
-          <template v-else>
-            <p class="mapping-validation-summary">
-              {{ isChinese
-                ? '共发现 ' + mappingValidation.discrepancies.length + ' 个用例在映射表与代码仓库中不一致。'
-                : mappingValidation.discrepancies.length + ' cases are not aligned between the mapping and repository.' }}
-            </p>
-            <el-table
-              :data="mappingValidation.discrepancies"
-              height="480"
-              border
-              stripe
-            >
-              <el-table-column prop="caseName" :label="t('Case name')" min-width="360" />
-              <el-table-column :label="t('Mapping entry')" width="180" align="center">
-                <template #default="{ row }">
-                  <span class="mapping-status" :class="{ present: row.inMapping }">
-                    {{ row.inMapping ? '✓' : '—' }}
-                  </span>
-                </template>
-              </el-table-column>
-              <el-table-column :label="t('Case file')" width="180" align="center">
-                <template #default="{ row }">
-                  <span class="mapping-status" :class="{ present: row.hasFile }">
-                    {{ row.hasFile ? '✓' : '—' }}
-                  </span>
-                </template>
-              </el-table-column>
-            </el-table>
-          </template>
-        </section>
+        <el-result
+          icon="success"
+          :title="isChinese
+            ? '当前共 ' + mappingValidation.publishedCount + ' 个用例'
+            : mappingValidation.publishedCount + ' test cases in total'"
+        />
 
         <template #footer>
           <el-button type="primary" @click="mappingValidationVisible = false">
