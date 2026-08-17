@@ -469,25 +469,20 @@ def discover_test_cases(settings: dict | None = None) -> dict:
     paths_by_case_number = {
         test_case_path.stem: test_case_path for test_case_path in test_case_paths
     }
-    mapping_modified_time = datetime.fromtimestamp(
-        mapping_path.stat().st_mtime
-    ).astimezone()
     test_cases = []
-    for case_id, (case_number, mapping_entry) in enumerate(mapping.items(), start=1):
+    for case_number, mapping_entry in mapping.items():
         test_case_path = paths_by_case_number.get(case_number)
+        if test_case_path is None:
+            continue
         relative_name = (
             test_case_path.relative_to(library_path).with_suffix("").as_posix()
-            if test_case_path is not None
-            else case_number
         )
-        modified_time = (
-            datetime.fromtimestamp(test_case_path.stat().st_mtime).astimezone()
-            if test_case_path is not None
-            else mapping_modified_time
-        )
+        modified_time = datetime.fromtimestamp(
+            test_case_path.stat().st_mtime
+        ).astimezone()
         test_cases.append(
             {
-                "id": str(case_id),
+                "id": str(len(test_cases) + 1),
                 "title": mapping_entry["mappedCaseName"],
                 "executionName": case_number,
                 "path": relative_name,
