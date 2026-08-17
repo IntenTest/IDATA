@@ -7,3 +7,4 @@ __pycache__/
 *.log
 app/logs/test-runs/
 app/.ohwemby.pid
+Testcases/

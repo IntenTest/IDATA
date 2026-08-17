@@ -8,6 +8,7 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import unquote, urlparse
 import ast
+import csv
 import json
 import os
 import re
@@ -31,6 +32,7 @@ MODEL_CONFIG_PATH = (
 PID_PATH = APP_DIRECTORY / ".ohwemby.pid"
 VENDOR_PACKAGES = frozenset(("vue-3.5.24", "element-plus-2.11.8"))
 HDC_TIMEOUT_SECONDS = 10
+GIT_SYNC_TIMEOUT_SECONDS = 120
 TEST_RUNS = {}
 TEST_RUNS_LOCK = Lock()
 TEST_RUN_LOG_DIRECTORY = APP_DIRECTORY / "logs" / "test-runs"
@@ -40,7 +42,8 @@ DEFAULT_SETTINGS = {
     "releaseName": "FangTian 1.10-1.12",
     "defaultEnvironment": "HarmonyOS",
     "defaultOwner": "kouyanan 30030842",
-    "testCaseLibraryPath": "../Phoebe-main/Testcases",
+    "testCaseRepositoryUrl": "https://github.com/IntenTest/Testcases.git",
+    "testCaseLibraryPath": "Testcases",
     "pythonExecutablePath": "../python310/python.exe",
     "runTestCasesPath": "../Phoebe-main/Testcases/run_testcase.py",
     "autoLoadDevices": True,
@@ -52,6 +55,7 @@ SETTING_FIELD_TYPES = {
     "releaseName": str,
     "defaultEnvironment": str,
     "defaultOwner": str,
+    "testCaseRepositoryUrl": str,
     "testCaseLibraryPath": str,
     "pythonExecutablePath": str,
     "runTestCasesPath": str,
@@ -275,6 +279,100 @@ def configured_path(raw_path: str) -> Path:
     return path.resolve()
 
 
+def run_git(command: list[str], *, cwd: Path | None = None) -> str:
+    try:
+        result = subprocess.run(
+            ["git", *command],
+            cwd=cwd,
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=GIT_SYNC_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError as error:
+        raise RuntimeError("Git was not found. Install Git and ensure it is available on PATH.") from error
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("The test case repository update timed out after 120 seconds.") from error
+    except OSError as error:
+        raise RuntimeError(f"Unable to run Git: {error}") from error
+
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
+        raise RuntimeError(f"Unable to update the test case repository: {detail}")
+    return result.stdout.strip()
+
+
+def sync_test_case_repository(settings: dict | None = None) -> dict:
+    settings = settings or read_settings()
+    repository_url = settings["testCaseRepositoryUrl"].strip()
+    raw_library_path = settings["testCaseLibraryPath"].strip()
+    if not repository_url:
+        raise RuntimeError("Set the test case repository URL in Settings.")
+    if not raw_library_path:
+        raise RuntimeError("Set the test case library path in Settings.")
+
+    library_path = configured_path(raw_library_path)
+    git_directory = library_path / ".git"
+    if library_path.exists() and not git_directory.is_dir():
+        if any(library_path.iterdir()):
+            raise RuntimeError(
+                f"The test case library path exists but is not a Git repository: {library_path}"
+            )
+    if git_directory.is_dir():
+        current_url = run_git(["remote", "get-url", "origin"], cwd=library_path)
+        if current_url != repository_url:
+            run_git(["remote", "set-url", "origin", repository_url], cwd=library_path)
+        output = run_git(["pull", "--ff-only"], cwd=library_path)
+        action = "updated"
+    else:
+        library_path.parent.mkdir(parents=True, exist_ok=True)
+        run_git(["clone", "--", repository_url, str(library_path)])
+        output = "Repository cloned."
+        action = "cloned"
+
+    return {
+        "action": action,
+        "message": output or "The test case repository is up to date.",
+        "path": str(library_path),
+    }
+
+
+def read_test_case_mapping(library_path: Path) -> tuple[dict[str, dict], Path]:
+    required_columns = {
+        "模块_名称",
+        "模块_编号",
+        "应用_名称",
+        "应用_编号",
+        "用例_名称",
+        "用例_编号",
+    }
+    mapping_path = library_path / "中英文映射.csv"
+    if not mapping_path.is_file():
+        raise RuntimeError(f"The test case mapping CSV was not found: {mapping_path}")
+    try:
+        with mapping_path.open(encoding="utf-8-sig", newline="") as mapping_file:
+            reader = csv.DictReader(mapping_file)
+            if not required_columns.issubset(reader.fieldnames or []):
+                raise RuntimeError(
+                    f"The test case mapping CSV does not contain the required columns: {mapping_path}"
+                )
+            mapping = {}
+            for row in reader:
+                case_number = (row.get("用例_编号") or "").strip()
+                if not case_number or case_number in mapping:
+                    continue
+                mapping[case_number] = {
+                    "moduleName": (row.get("模块_名称") or "").strip(),
+                    "moduleCode": (row.get("模块_编号") or "").strip(),
+                    "applicationName": (row.get("应用_名称") or "").strip(),
+                    "applicationCode": (row.get("应用_编号") or "").strip(),
+                    "mappedCaseName": (row.get("用例_名称") or "").strip(),
+                }
+            return mapping, mapping_path
+    except (OSError, UnicodeError, csv.Error) as error:
+        raise RuntimeError(f"Unable to read the test case mapping CSV: {error}") from error
+
+
 def discover_test_cases(settings: dict | None = None) -> dict:
     settings = settings or read_settings()
     raw_library_path = settings["testCaseLibraryPath"].strip()
@@ -294,21 +392,41 @@ def discover_test_cases(settings: dict | None = None) -> dict:
     test_case_paths = sorted(
         path
         for path in library_path.rglob("*")
-        if path.is_file() and path.suffix.lower() == ".py"
+        if path.is_file()
+        and path.suffix.lower() == ".py"
+        and path.name.lower() != "__init__.py"
     )
+    mapping, mapping_path = read_test_case_mapping(library_path)
+    paths_by_case_number = {
+        test_case_path.stem: test_case_path for test_case_path in test_case_paths
+    }
+    mapping_modified_time = datetime.fromtimestamp(
+        mapping_path.stat().st_mtime
+    ).astimezone()
     test_cases = []
-    for case_id, test_case_path in enumerate(test_case_paths, start=1):
+    for case_id, (case_number, mapping_entry) in enumerate(mapping.items(), start=1):
+        test_case_path = paths_by_case_number.get(case_number)
         relative_name = (
             test_case_path.relative_to(library_path).with_suffix("").as_posix()
+            if test_case_path is not None
+            else case_number
         )
-        modified_time = datetime.fromtimestamp(
-            test_case_path.stat().st_mtime
-        ).astimezone()
+        modified_time = (
+            datetime.fromtimestamp(test_case_path.stat().st_mtime).astimezone()
+            if test_case_path is not None
+            else mapping_modified_time
+        )
         test_cases.append(
             {
                 "id": str(case_id),
-                "title": test_case_path.stem,
+                "title": mapping_entry["mappedCaseName"],
+                "executionName": case_number,
                 "path": relative_name,
+                "moduleName": mapping_entry["moduleName"],
+                "moduleCode": mapping_entry["moduleCode"],
+                "applicationName": mapping_entry["applicationName"],
+                "applicationCode": mapping_entry["applicationCode"],
+                "mappedCaseName": mapping_entry["mappedCaseName"],
                 "category": "Standard",
                 "status": "Not run",
                 "owner": settings["defaultOwner"],
@@ -316,7 +434,23 @@ def discover_test_cases(settings: dict | None = None) -> dict:
             }
         )
 
-    return {"testCases": test_cases, "error": None}
+    discovered_names = {test_case_path.stem for test_case_path in test_case_paths}
+    discrepancies = [
+        {
+            "caseName": case_name,
+            "inMapping": case_name in mapping,
+            "hasFile": case_name in discovered_names,
+        }
+        for case_name in sorted(discovered_names.symmetric_difference(mapping))
+    ]
+    return {
+        "testCases": test_cases,
+        "mappingValidation": {
+            "mappingFile": mapping_path.relative_to(library_path).as_posix(),
+            "discrepancies": discrepancies,
+        },
+        "error": None,
+    }
 
 
 def start_test_cases(request_body: dict) -> dict:
@@ -374,7 +508,7 @@ def start_test_cases(request_body: dict) -> dict:
     processes = []
     for case_id in case_ids:
         test_case = discovered_cases[case_id]
-        case_name = test_case["title"]
+        case_name = test_case.get("executionName", test_case["title"])
         test_command = [
             str(python_path),
             str(runner_path),
@@ -740,6 +874,17 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         request_path = urlparse(self.path).path
+        if request_path == "/api/test-cases/sync":
+            try:
+                sync_result = sync_test_case_repository()
+                result = {**discover_test_cases(), "sync": sync_result}
+                status = 200
+            except (RuntimeError, OSError) as error:
+                result = {"testCases": [], "error": str(error)}
+                status = 500
+            send_json(self, status, result)
+            return
+
         report_match = re.fullmatch(
             r"/api/test-runs/([^/]+)/reports/([^/]+)/open",
             request_path,
@@ -879,6 +1024,12 @@ def main() -> None:
             file=sys.stderr,
         )
         raise SystemExit(1)
+
+    try:
+        sync_result = sync_test_case_repository()
+        print(f"Test case repository {sync_result['action']}: {sync_result['path']}")
+    except (RuntimeError, OSError) as error:
+        print(f"Warning: unable to update the test case repository: {error}", file=sys.stderr)
 
     try:
         server = create_server(handler)

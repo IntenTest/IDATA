@@ -3,6 +3,7 @@ const {
   createApp,
   onBeforeUnmount,
   onMounted,
+  nextTick,
   reactive,
   ref,
   watch,
@@ -193,9 +194,11 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Default environment": "默认环境",
   "Default owner": "默认负责人",
   "Test case library path": "测试用例库路径",
+  "Test case repository URL": "测试用例库 URL",
   "Python executable path": "Python 可执行文件路径",
   "run_testcases path": "run_testcases 路径",
   "Include all .py files in this directory and its subdirectories.": "包含此目录及其所有子目录中的 .py 文件。",
+  "The Git repository is cloned to this local directory.": "Git 仓库将克隆到此本地目录。",
   "Must point to a python.exe file.": "必须指向 python.exe 文件。",
   "The Python runner that receives the selected case name and inspection mode.": "接收所选用例名称和检查模式的 Python 运行程序。",
   "Auto-load devices": "自动加载设备",
@@ -225,6 +228,16 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Log and recording inspection": "日志&录屏检测",
   "Test case library unavailable": "测试用例库不可用",
   "Reload test cases": "重新加载测试用例",
+  "Update test case library": "更新用例库",
+  "Test case library updated.": "测试用例库已更新。",
+  "Mapping validation": "映射表检查",
+  "Mapping consistency check": "用例一致性检查",
+  "The following cases are not aligned between the mapping and repository.": "以下用例在映射表与代码仓库中不一致。",
+  "The mapping and repository are fully aligned.": "映射表与代码仓库中的用例完全一致。",
+  "Mapping file": "映射文件",
+  "Case name": "用例名称",
+  "Mapping entry": "映射表记录",
+  "Case file": "用例文件",
   "Starting...": "正在启动……",
   "Test run failed": "测试任务启动失败",
   "Console output": "控制台输出",
@@ -359,6 +372,12 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   Yesterday: "昨天",
   ID: "ID",
   Title: "标题",
+  "Test case name": "用例名称",
+  "Explorer view": "层级视图",
+  "Table view": "表格视图",
+  "Hierarchy view": "层级视图",
+  Module: "模块名称",
+  Application: "应用名称",
   Updated: "更新时间",
   Actions: "操作",
   Name: "名称",
@@ -606,7 +625,8 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
   releaseName: "FangTian 1.10-1.12",
   defaultEnvironment: "HarmonyOS",
   defaultOwner: "kouyanan 30030842",
-  testCaseLibraryPath: "../Phoebe-main/Testcases",
+  testCaseRepositoryUrl: "https://github.com/IntenTest/Testcases.git",
+  testCaseLibraryPath: "Testcases",
   pythonExecutablePath: "../python310/python.exe",
   runTestCasesPath: "../Phoebe-main/Testcases/run_testcase.py",
   autoLoadDevices: true,
@@ -728,6 +748,12 @@ const App = {
     const currentPage = ref(1);
     const pageSize = ref(20);
     const testCaseTableRef = ref(null);
+    const testCaseTreeRef = ref(null);
+    const testCaseViewMode = ref(
+      window.localStorage.getItem("oh-wemby-test-case-view") === "explorer"
+        ? "explorer"
+        : "list",
+    );
     const selectedTestCases = ref([]);
     const createDialogVisible = ref(false);
     const createSuiteDialogVisible = ref(false);
@@ -742,6 +768,11 @@ const App = {
     const testRunExecution = ref(null);
     const testCasesLoading = ref(false);
     const testCasesError = ref("");
+    const mappingValidationVisible = ref(false);
+    const mappingValidation = ref({
+      mappingFile: "",
+      discrepancies: [],
+    });
     const testRunSearchQuery = ref("");
     const testRunStatusFilter = ref("");
     const testRunCurrentPage = ref(1);
@@ -1007,10 +1038,12 @@ const App = {
       }).format(new Date()),
     );
     const testCaseColumns = computed(() =>
-      TABLE_DEFINITIONS.testCases.columns.map((column) => ({
-        ...column,
-        label: t(column.label),
-      })),
+      TABLE_DEFINITIONS.testCases.columns
+        .filter((column) => column.renderer !== "actions")
+        .map((column) => ({
+          ...column,
+          label: t(column.label),
+        })),
     );
     const testSuiteColumns = computed(() =>
       TABLE_DEFINITIONS.testSuites.columns.map((column) => ({
@@ -1025,12 +1058,69 @@ const App = {
         const matchesCategory = testCase.category === testCaseCategory.value;
         const matchesSearch =
           !query ||
-          [testCase.id, testCase.title, testCase.owner].some(
+          [
+            testCase.id,
+            testCase.title,
+            testCase.owner,
+            testCase.moduleName,
+            testCase.applicationName,
+          ].some(
             (value) => value.toLowerCase().includes(query),
           );
         return matchesCategory && matchesSearch;
       });
     });
+    const testCaseTree = computed(() => {
+      const modules = new Map();
+
+      filteredTestCases.value.forEach((testCase) => {
+        const moduleLabel = displayValue(testCase.moduleName);
+        const applicationLabel = displayValue(testCase.applicationName);
+        const moduleKey = `module:${testCase.moduleCode || moduleLabel}`;
+        const applicationKey = `${moduleKey}:application:${testCase.applicationCode || applicationLabel}`;
+
+        if (!modules.has(moduleKey)) {
+          modules.set(moduleKey, {
+            id: moduleKey,
+            type: "module",
+            label: moduleLabel,
+            children: [],
+            applications: new Map(),
+          });
+        }
+
+        const moduleNode = modules.get(moduleKey);
+        if (!moduleNode.applications.has(applicationKey)) {
+          const applicationNode = {
+            id: applicationKey,
+            type: "application",
+            label: applicationLabel,
+            children: [],
+          };
+          moduleNode.applications.set(applicationKey, applicationNode);
+          moduleNode.children.push(applicationNode);
+        }
+
+        moduleNode.applications.get(applicationKey).children.push({
+          id: `case:${testCase.id}`,
+          type: "case",
+          label: displayValue(testCase.title),
+          executionName: testCase.executionName,
+          testCase,
+        });
+      });
+
+      return [...modules.values()].map(({ applications, ...moduleNode }) => ({
+        ...moduleNode,
+        caseCount: moduleNode.children.reduce(
+          (total, application) => total + application.children.length,
+          0,
+        ),
+      }));
+    });
+    const testCaseTreeDefaultExpandedKeys = computed(() =>
+      testCaseTree.value.length ? [testCaseTree.value[0].id] : [],
+    );
     const selectedCategoryTestCases = computed(() =>
       testCases.value.filter(
         (testCase) => testCase.category === testCaseCategory.value,
@@ -1211,9 +1301,29 @@ const App = {
       selectedTestCases.value = selection;
     }
 
+    function changeTreeSelectedTestCases(_node, checkedState) {
+      selectedTestCases.value = checkedState.checkedNodes
+        .filter((node) => node.type === "case")
+        .map((node) => node.testCase);
+    }
+
+    function changeTestCaseViewMode(mode) {
+      testCaseViewMode.value = mode;
+      window.localStorage.setItem("oh-wemby-test-case-view", mode);
+      nextTick(() => {
+        if (mode === "explorer") {
+          testCaseTreeRef.value?.setCheckedKeys(
+            selectedTestCases.value.map((testCase) => `case:${testCase.id}`),
+            true,
+          );
+        }
+      });
+    }
+
     function clearSelectedTestCases() {
       selectedTestCases.value = [];
       testCaseTableRef.value?.clearSelection();
+      testCaseTreeRef.value?.setCheckedKeys([]);
     }
 
     function selectedTestCaseIds() {
@@ -1469,6 +1579,40 @@ const App = {
         testCases.value = [];
         testCasesError.value =
           error instanceof Error ? error.message : "Unable to load test cases.";
+      } finally {
+        testCasesLoading.value = false;
+      }
+    }
+
+    async function updateTestCaseLibrary() {
+      testCasesLoading.value = true;
+      testCasesError.value = "";
+
+      try {
+        const response = await fetch("/api/test-cases/sync", { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(
+            result.error ||
+              `The test case service returned HTTP ${response.status}.`,
+          );
+        }
+        testCases.value = Array.isArray(result.testCases) ? result.testCases : [];
+        mappingValidation.value = result.mappingValidation || {
+          mappingFile: "",
+          discrepancies: [],
+        };
+        mappingValidationVisible.value = true;
+        newTestRun.selections = newTestRun.selections.filter((selection) =>
+          testCases.value.some((testCase) => testCase.id === selection),
+        );
+        ElementPlus.ElMessage({
+          message: t("Test case library updated."),
+          type: "success",
+        });
+      } catch (error) {
+        testCasesError.value =
+          error instanceof Error ? error.message : "Unable to update the test case library.";
       } finally {
         testCasesLoading.value = false;
       }
@@ -1863,6 +2007,9 @@ const App = {
       loadDevices,
       loadSettings,
       loadTestCases,
+      updateTestCaseLibrary,
+      mappingValidation,
+      mappingValidationVisible,
       resetSettings,
       isChinese,
       t,
@@ -1926,6 +2073,12 @@ const App = {
       tasks,
       testCases,
       testCaseTableRef,
+      testCaseTreeRef,
+      testCaseTree,
+      testCaseTreeDefaultExpandedKeys,
+      testCaseViewMode,
+      changeTestCaseViewMode,
+      changeTreeSelectedTestCases,
       testCaseCategory,
       testCaseColumns,
       selectedCategoryTestCases,
@@ -2025,9 +2178,9 @@ const App = {
             type="primary"
             round
             :loading="testCasesLoading"
-            @click="loadTestCases"
+            @click="updateTestCaseLibrary"
           >
-            {{ t('Reload test cases') }}
+            {{ t('Update test case library') }}
           </el-button>
           <el-button
             v-else-if="activeView === 'Test Suites'"
@@ -2648,8 +2801,8 @@ const App = {
               :closable="false"
             >
               <template #default>
-                <el-button size="small" plain @click="loadTestCases">
-                  {{ t('Reload test cases') }}
+                <el-button size="small" plain @click="updateTestCaseLibrary">
+                  {{ t('Update test case library') }}
                 </el-button>
               </template>
             </el-alert>
@@ -2671,18 +2824,18 @@ const App = {
 
             <div class="test-category-switch">
               <el-radio-group
-                v-model="testCaseCategory"
+                :model-value="testCaseViewMode"
                 class="test-selection-type"
-                aria-label="Test case category"
+                aria-label="Test case view"
+                @update:model-value="changeTestCaseViewMode"
               >
-                <el-radio-button value="Standard">
-                  {{ t('Standard') }}
+                <el-radio-button value="list">
+                  {{ t('Table view') }}
                 </el-radio-button>
-                <el-radio-button value="Customized" disabled>
-                  {{ t('Customized') }}
+                <el-radio-button value="explorer">
+                  {{ t('Hierarchy view') }}
                 </el-radio-button>
               </el-radio-group>
-              <span>{{ t('Contact an administrator to access customized test cases.') }}</span>
             </div>
 
             <div class="test-toolbar">
@@ -2724,7 +2877,49 @@ const App = {
               </div>
             </div>
 
+            <section
+              v-if="testCaseViewMode === 'explorer'"
+              class="test-case-explorer"
+            >
+              <div class="test-case-explorer-header">
+                <div>
+                  <span class="explorer-window-dot"></span>
+                  <strong>{{ t('Explorer view') }}</strong>
+                </div>
+                <span>{{ filteredTestCases.length }} {{ isChinese ? '个用例' : 'cases' }}</span>
+              </div>
+              <el-tree
+                ref="testCaseTreeRef"
+                v-loading="testCasesLoading"
+                :data="testCaseTree"
+                :default-expanded-keys="testCaseTreeDefaultExpandedKeys"
+                :empty-text="t('No test cases match these filters')"
+                node-key="id"
+                show-checkbox
+                highlight-current
+                class="test-case-tree"
+                @check="changeTreeSelectedTestCases"
+              >
+                <template #default="{ data }">
+                  <div class="test-case-tree-node" :class="'is-' + data.type">
+                    <span class="tree-node-icon" aria-hidden="true">
+                      {{ data.type === 'case' ? '◇' : '▰' }}
+                    </span>
+                    <span class="tree-node-label">{{ data.label }}</span>
+                    <span v-if="data.type === 'module'" class="tree-node-count">
+                      {{ data.caseCount }}
+                    </span>
+                    <span v-else-if="data.type === 'application'" class="tree-node-count">
+                      {{ data.children.length }}
+                    </span>
+                    <code v-else class="tree-node-code">{{ data.executionName }}</code>
+                  </div>
+                </template>
+              </el-tree>
+            </section>
+
             <el-table
+              v-else
               ref="testCaseTableRef"
               v-loading="testCasesLoading"
               :data="paginatedTestCases"
@@ -2774,7 +2969,7 @@ const App = {
               </el-table-column>
             </el-table>
 
-            <div class="table-pagination">
+            <div v-if="testCaseViewMode === 'list'" class="table-pagination">
               <el-pagination
                 v-model:current-page="currentPage"
                 v-model:page-size="pageSize"
@@ -3124,6 +3319,15 @@ const App = {
                 </el-form-item>
                 <el-form-item
                   class="settings-path-field"
+                  :label="t('Test case repository URL')"
+                >
+                  <el-input
+                    v-model="appSettings.testCaseRepositoryUrl"
+                    placeholder="https://github.com/organization/test-cases.git"
+                  />
+                </el-form-item>
+                <el-form-item
+                  class="settings-path-field"
                   :label="t('Test case library path')"
                 >
                   <el-input
@@ -3131,7 +3335,7 @@ const App = {
                     placeholder="C:\\path\\to\\test-cases"
                   />
                   <span class="settings-field-help">
-                    {{ t('Include all .py files in this directory and its subdirectories.') }}
+                    {{ t('The Git repository is cloned to this local directory.') }}
                   </span>
                 </el-form-item>
                 <el-form-item
@@ -3257,6 +3461,63 @@ const App = {
           </el-button>
         </section>
       </main>
+
+      <el-dialog
+        v-model="mappingValidationVisible"
+        :title="t('Mapping consistency check')"
+        width="min(980px, calc(100vw - 32px))"
+        top="5vh"
+      >
+        <p class="mapping-file">
+          <strong>{{ t('Mapping file') }}:</strong>
+          {{ mappingValidation.mappingFile }}
+        </p>
+
+        <section class="mapping-validation-section">
+          <el-alert
+            v-if="!mappingValidation.discrepancies.length"
+            type="success"
+            :title="t('The mapping and repository are fully aligned.')"
+            show-icon
+            :closable="false"
+          />
+          <template v-else>
+            <p class="mapping-validation-summary">
+              {{ isChinese
+                ? '共发现 ' + mappingValidation.discrepancies.length + ' 个用例在映射表与代码仓库中不一致。'
+                : mappingValidation.discrepancies.length + ' cases are not aligned between the mapping and repository.' }}
+            </p>
+            <el-table
+              :data="mappingValidation.discrepancies"
+              height="480"
+              border
+              stripe
+            >
+              <el-table-column prop="caseName" :label="t('Case name')" min-width="360" />
+              <el-table-column :label="t('Mapping entry')" width="180" align="center">
+                <template #default="{ row }">
+                  <span class="mapping-status" :class="{ present: row.inMapping }">
+                    {{ row.inMapping ? '✓' : '—' }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column :label="t('Case file')" width="180" align="center">
+                <template #default="{ row }">
+                  <span class="mapping-status" :class="{ present: row.hasFile }">
+                    {{ row.hasFile ? '✓' : '—' }}
+                  </span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </template>
+        </section>
+
+        <template #footer>
+          <el-button type="primary" @click="mappingValidationVisible = false">
+            {{ t('Close') }}
+          </el-button>
+        </template>
+      </el-dialog>
 
       <el-dialog
         v-model="createDialogVisible"
