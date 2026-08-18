@@ -4,6 +4,7 @@ const {
   onBeforeUnmount,
   onMounted,
   nextTick,
+  h,
   reactive,
   ref,
   watch,
@@ -198,7 +199,7 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Python executable path": "Python 可执行文件路径",
   "run_testcases path": "run_testcases 路径",
   "Include all .py files in this directory and its subdirectories.": "包含此目录及其所有子目录中的 .py 文件。",
-  "The Git repository is cloned to this local directory.": "Git 仓库将克隆到此本地目录。",
+  "Place the prepared test case package in this directory.": "请将预制好的测试用例包放在此目录。",
   "Must point to a python.exe file.": "必须指向 python.exe 文件。",
   "The Python runner that receives the selected case name and inspection mode.": "接收所选用例名称和检查模式的 Python 运行程序。",
   "Auto-load devices": "自动加载设备",
@@ -231,9 +232,11 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Log and screenshot inspection": "日志&截图检测",
   "Log and recording inspection": "日志&录屏检测",
   "Test case library unavailable": "测试用例库不可用",
-  "Reload test cases": "重新加载测试用例",
+  "Reload test cases": "重新加载用例",
   "Update test case library": "更新用例库",
   "Test case library updated.": "用例库已更新",
+  "Update the test case library manually": "请手动更新用例库",
+  "Open CMD or a terminal and run the following command. When it finishes, click Reload test cases.": "请打开 CMD 或终端执行以下命令。完成后，点击“重新加载用例”。",
   Close: "关闭",
   "Mapping validation": "映射表检查",
   "Mapping consistency check": "用例一致性检查",
@@ -733,6 +736,7 @@ const App = {
     const settingsLoading = ref(false);
     const settingsSaving = ref(false);
     const settingsError = ref("");
+    const testCaseUpdateCommand = ref("");
     const settingsSavedAt = ref("");
     const modelConfig = reactive({ api_base: "", api_key: "", model_name: "" });
     const modelConfigLoading = ref(false);
@@ -1436,17 +1440,6 @@ const App = {
       }, 0);
     }
 
-    function applyNetworkZoneDefaults(networkZone) {
-      if (networkZone !== "yellow") {
-        return;
-      }
-      testRuns.value = testRuns.value.filter((run) => !run.demoData);
-      testSuites.value = testSuites.value.filter((suite) => !suite.demoData);
-      if (!testRuns.value.some((run) => run.id === selectedTestRunId.value)) {
-        selectedTestRunId.value = "";
-      }
-    }
-
     async function loadSettings() {
       settingsLoading.value = true;
       settingsError.value = "";
@@ -1458,7 +1451,7 @@ const App = {
           throw new Error(result.error || `The settings service returned HTTP ${response.status}.`);
         }
         applySettings(result.settings || {});
-        applyNetworkZoneDefaults(result.networkZone);
+        testCaseUpdateCommand.value = result.testCaseUpdateCommand || "";
         settingsLoaded = true;
         await loadTestCases();
       } catch (error) {
@@ -1484,6 +1477,7 @@ const App = {
           throw new Error(result.error || `The settings service returned HTTP ${response.status}.`);
         }
         applySettings(result.settings || {});
+        testCaseUpdateCommand.value = result.testCaseUpdateCommand || "";
         await loadTestCases();
         settingsSavedAt.value = new Intl.DateTimeFormat(
           isChinese.value ? "zh-CN" : "en-US",
@@ -1639,31 +1633,24 @@ const App = {
     }
 
     async function updateTestCaseLibrary() {
-      testCasesLoading.value = true;
-      testCasesError.value = "";
-
+      const command = testCaseUpdateCommand.value ||
+        `git -C "${appSettings.testCaseLibraryPath}" pull --ff-only`;
       try {
-        const response = await fetch("/api/test-cases/sync", { method: "POST" });
-        const result = await response.json();
-        if (!response.ok) {
-          throw new Error(
-            result.error ||
-              `The test case service returned HTTP ${response.status}.`,
-          );
-        }
-        testCases.value = Array.isArray(result.testCases) ? result.testCases : [];
-        mappingValidation.value = {
-          publishedCount: testCases.value.length,
-        };
-        mappingValidationVisible.value = true;
-        newTestRun.selections = newTestRun.selections.filter((selection) =>
-          testCases.value.some((testCase) => testCase.id === selection),
+        await ElementPlus.ElMessageBox.confirm(
+          h("div", { class: "test-case-update-instructions" }, [
+            h("p", t("Open CMD or a terminal and run the following command. When it finishes, click Reload test cases.")),
+            h("pre", { class: "test-case-update-command" }, command),
+          ]),
+          t("Update the test case library manually"),
+          {
+            confirmButtonText: t("Reload test cases"),
+            cancelButtonText: t("Close"),
+            type: "info",
+          },
         );
-      } catch (error) {
-        testCasesError.value =
-          error instanceof Error ? error.message : "Unable to update the test case library.";
-      } finally {
-        testCasesLoading.value = false;
+        await loadTestCases();
+      } catch (_error) {
+        // The user closed the instructions without reloading the local package.
       }
     }
 
@@ -3370,15 +3357,6 @@ const App = {
                 </el-form-item>
                 <el-form-item
                   class="settings-path-field"
-                  :label="t('Test case repository URL')"
-                >
-                  <el-input
-                    v-model="appSettings.testCaseRepositoryUrl"
-                    placeholder="https://github.com/organization/test-cases.git"
-                  />
-                </el-form-item>
-                <el-form-item
-                  class="settings-path-field"
                   :label="t('Test case library path')"
                 >
                   <el-input
@@ -3386,7 +3364,7 @@ const App = {
                     placeholder="C:\\path\\to\\test-cases"
                   />
                   <span class="settings-field-help">
-                    {{ t('The Git repository is cloned to this local directory.') }}
+                    {{ t('Place the prepared test case package in this directory.') }}
                   </span>
                 </el-form-item>
                 <el-form-item

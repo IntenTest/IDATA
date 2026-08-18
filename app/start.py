@@ -35,9 +35,6 @@ MODEL_API_KEY_ENVIRONMENT_VARIABLE = "OHWEMBY_MODEL_API_KEY"
 PID_PATH = APP_DIRECTORY / ".ohwemby.pid"
 VENDOR_PACKAGES = frozenset(("vue-3.5.24", "element-plus-2.11.8"))
 HDC_TIMEOUT_SECONDS = 10
-GIT_SYNC_TIMEOUT_SECONDS = 120
-NETWORK_ZONE_PROBE_HOST = "10.90.65.189"
-NETWORK_ZONE_PROBE_TIMEOUT_SECONDS = 3
 DEFAULT_TEST_CASE_REPOSITORY_URL = (
     "https://codehub-dg-y.huawei.com/k30030842/Testcases.git"
 )
@@ -291,125 +288,9 @@ def configured_path(raw_path: str) -> Path:
     return path.resolve()
 
 
-def detect_network_zone() -> str:
-    command = (
-        ["ping", "-n", "1", "-w", "3000", NETWORK_ZONE_PROBE_HOST]
-        if os.name == "nt"
-        else ["ping", "-c", "1", NETWORK_ZONE_PROBE_HOST]
-    )
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            check=False,
-            timeout=NETWORK_ZONE_PROBE_TIMEOUT_SECONDS,
-        )
-    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-        return "blue"
-    return "yellow" if result.returncode == 0 else "blue"
-
-
-def apply_network_zone_repository() -> tuple[dict, str]:
-    zone = detect_network_zone()
-    repository_url = (
-        DEFAULT_TEST_CASE_REPOSITORY_URL
-        if zone == "yellow"
-        else FALLBACK_TEST_CASE_REPOSITORY_URL
-    )
-    settings = read_settings()
-    if settings["testCaseRepositoryUrl"] != repository_url:
-        settings["testCaseRepositoryUrl"] = repository_url
-        write_settings(settings)
-    return settings, zone
-
-
-def run_git(command: list[str], *, cwd: Path | None = None) -> str:
-    try:
-        result = subprocess.run(
-            ["git", *command],
-            cwd=cwd,
-            capture_output=True,
-            check=False,
-            text=True,
-            timeout=GIT_SYNC_TIMEOUT_SECONDS,
-        )
-    except FileNotFoundError as error:
-        raise RuntimeError("Git was not found. Install Git and ensure it is available on PATH.") from error
-    except subprocess.TimeoutExpired as error:
-        raise RuntimeError("The test case repository update timed out after 120 seconds.") from error
-    except OSError as error:
-        raise RuntimeError(f"Unable to run Git: {error}") from error
-
-    if result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
-        raise RuntimeError(f"Unable to update the test case repository: {detail}")
-    return result.stdout.strip()
-
-
-def sync_test_case_repository(settings: dict | None = None) -> dict:
-    settings = settings or read_settings()
-    repository_url = settings["testCaseRepositoryUrl"].strip()
-    raw_library_path = settings["testCaseLibraryPath"].strip()
-    if not repository_url:
-        raise RuntimeError("Set the test case repository URL in Settings.")
-    if not raw_library_path:
-        raise RuntimeError("Set the test case library path in Settings.")
-
-    library_path = configured_path(raw_library_path)
-    git_directory = library_path / ".git"
-    if library_path.exists() and not git_directory.is_dir():
-        if any(library_path.iterdir()):
-            raise RuntimeError(
-                f"The test case library path exists but is not a Git repository: {library_path}"
-            )
-    repository_urls = [repository_url]
-    errors = []
-    output = ""
-    selected_url = ""
-
-    if git_directory.is_dir():
-        original_url = run_git(["remote", "get-url", "origin"], cwd=library_path)
-        for candidate_url in repository_urls:
-            try:
-                run_git(["remote", "set-url", "origin", candidate_url], cwd=library_path)
-                output = run_git(["pull", "--ff-only"], cwd=library_path)
-                selected_url = candidate_url
-                break
-            except RuntimeError as error:
-                errors.append(str(error))
-        if not selected_url:
-            run_git(["remote", "set-url", "origin", original_url], cwd=library_path)
-        action = "updated"
-    else:
-        library_path.parent.mkdir(parents=True, exist_ok=True)
-        for candidate_url in repository_urls:
-            try:
-                with tempfile.TemporaryDirectory(
-                    dir=library_path.parent,
-                    prefix=".testcases-clone-",
-                ) as temp_directory:
-                    clone_path = Path(temp_directory) / "repository"
-                    run_git(["clone", "--", candidate_url, str(clone_path)])
-                    if library_path.is_dir():
-                        library_path.rmdir()
-                    clone_path.replace(library_path)
-                output = "Repository cloned."
-                selected_url = candidate_url
-                break
-            except (RuntimeError, OSError) as error:
-                errors.append(str(error))
-        action = "cloned"
-
-    if not selected_url:
-        raise RuntimeError(errors[-1] if errors else "Unable to update the test case repository.")
-
-    return {
-        "action": action,
-        "message": output or "The test case repository is up to date.",
-        "path": str(library_path),
-        "repositoryUrl": selected_url,
-        "usedFallback": False,
-    }
+def test_case_update_command(settings: dict) -> str:
+    library_path = configured_path(settings["testCaseLibraryPath"])
+    return f'git -C "{library_path}" pull --ff-only'
 
 
 def read_test_case_mapping(library_path: Path) -> tuple[dict[str, dict], Path]:
@@ -942,8 +823,6 @@ def open_test_report(run_id: str, case_id: str) -> str:
 
 
 class AppRequestHandler(SimpleHTTPRequestHandler):
-    network_zone = "blue"
-
     def do_GET(self) -> None:
         request_path = urlparse(self.path).path
         if request_path == "/api/devices":
@@ -966,9 +845,10 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
 
         if request_path == "/api/settings":
             try:
+                settings = read_settings()
                 result = {
-                    "settings": read_settings(),
-                    "networkZone": self.network_zone,
+                    "settings": settings,
+                    "testCaseUpdateCommand": test_case_update_command(settings),
                 }
                 status = 200
             except RuntimeError as error:
@@ -991,17 +871,6 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         request_path = urlparse(self.path).path
-        if request_path == "/api/test-cases/sync":
-            try:
-                sync_result = sync_test_case_repository()
-                result = {**discover_test_cases(), "sync": sync_result}
-                status = 200
-            except (RuntimeError, OSError) as error:
-                result = {"testCases": [], "error": str(error)}
-                status = 500
-            send_json(self, status, result)
-            return
-
         report_match = re.fullmatch(
             r"/api/test-runs/([^/]+)/reports/([^/]+)/open",
             request_path,
@@ -1065,7 +934,10 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
             result = (
                 {"modelConfig": model_config}
                 if request_path == "/api/model-config"
-                else {"settings": settings}
+                else {
+                    "settings": settings,
+                    "testCaseUpdateCommand": test_case_update_command(settings),
+                }
             )
         send_json(self, status, result)
 
@@ -1141,18 +1013,6 @@ def main() -> None:
             file=sys.stderr,
         )
         raise SystemExit(1)
-
-    try:
-        settings, network_zone = apply_network_zone_repository()
-        AppRequestHandler.network_zone = network_zone
-        print(
-            f"Network zone: {network_zone}; test case repository: "
-            f"{settings['testCaseRepositoryUrl']}"
-        )
-        sync_result = sync_test_case_repository(settings)
-        print(f"Test case repository {sync_result['action']}: {sync_result['path']}")
-    except (RuntimeError, OSError) as error:
-        print(f"Warning: unable to update the test case repository: {error}", file=sys.stderr)
 
     try:
         server = create_server(handler)

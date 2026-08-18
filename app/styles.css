@@ -1922,6 +1922,26 @@ h3 {
   white-space: nowrap;
 }
 
+.test-case-update-instructions p {
+  margin: 0 0 12px;
+  line-height: 1.6;
+}
+
+.test-case-update-command {
+  margin: 0;
+  padding: 12px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: #f5f7fa;
+  color: #303133;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+
 .test-case-explorer {
   overflow: hidden;
   min-height: 420px;
