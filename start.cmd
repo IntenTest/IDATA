@@ -15,12 +15,23 @@ if not exist "%APP_DIRECTORY%\start.py" (
 
 cd /d "%APP_DIRECTORY%"
 
-where py >nul 2>nul
-if %errorlevel% equ 0 (
-    set "PYTHON_COMMAND=py -3"
-) else (
+python --version >nul 2>nul
+if not errorlevel 1 (
     set "PYTHON_COMMAND=python"
+    goto python_found
 )
+
+python3 --version >nul 2>nul
+if not errorlevel 1 (
+    set "PYTHON_COMMAND=python3"
+    goto python_found
+)
+
+powershell -NoProfile -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Python could not be started. Please open a command prompt in the app folder and run: python start.py', 'Oh Wemby - Python required', 'OK', 'Error')" >nul
+exit /b 1
+
+:python_found
+echo Using %PYTHON_COMMAND%.
 
 echo Stopping the existing Oh Wemby service...
 %PYTHON_COMMAND% stop.py
