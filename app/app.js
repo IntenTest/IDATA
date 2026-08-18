@@ -1440,6 +1440,17 @@ const App = {
       }, 0);
     }
 
+    function applyNetworkZoneDefaults(networkZone) {
+      if (networkZone !== "yellow") {
+        return;
+      }
+      testRuns.value = testRuns.value.filter((run) => !run.demoData);
+      testSuites.value = testSuites.value.filter((suite) => !suite.demoData);
+      if (!testRuns.value.some((run) => run.id === selectedTestRunId.value)) {
+        selectedTestRunId.value = "";
+      }
+    }
+
     async function loadSettings() {
       settingsLoading.value = true;
       settingsError.value = "";
@@ -1452,6 +1463,7 @@ const App = {
         }
         applySettings(result.settings || {});
         testCaseUpdateCommand.value = result.testCaseUpdateCommand || "";
+        applyNetworkZoneDefaults(result.networkZone);
         settingsLoaded = true;
         await loadTestCases();
       } catch (error) {

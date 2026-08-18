@@ -35,6 +35,8 @@ MODEL_API_KEY_ENVIRONMENT_VARIABLE = "OHWEMBY_MODEL_API_KEY"
 PID_PATH = APP_DIRECTORY / ".ohwemby.pid"
 VENDOR_PACKAGES = frozenset(("vue-3.5.24", "element-plus-2.11.8"))
 HDC_TIMEOUT_SECONDS = 10
+NETWORK_ZONE_PROBE_HOST = "10.90.65.189"
+NETWORK_ZONE_PROBE_TIMEOUT_SECONDS = 3
 DEFAULT_TEST_CASE_REPOSITORY_URL = (
     "https://codehub-dg-y.huawei.com/k30030842/Testcases.git"
 )
@@ -286,6 +288,24 @@ def configured_path(raw_path: str) -> Path:
     if not path.is_absolute():
         path = PROJECT_DIRECTORY / path
     return path.resolve()
+
+
+def detect_network_zone() -> str:
+    command = (
+        ["ping", "-n", "1", "-w", "3000", NETWORK_ZONE_PROBE_HOST]
+        if os.name == "nt"
+        else ["ping", "-c", "1", NETWORK_ZONE_PROBE_HOST]
+    )
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            check=False,
+            timeout=NETWORK_ZONE_PROBE_TIMEOUT_SECONDS,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return "blue"
+    return "yellow" if result.returncode == 0 else "blue"
 
 
 def test_case_update_command(settings: dict) -> str:
@@ -823,6 +843,8 @@ def open_test_report(run_id: str, case_id: str) -> str:
 
 
 class AppRequestHandler(SimpleHTTPRequestHandler):
+    network_zone = "blue"
+
     def do_GET(self) -> None:
         request_path = urlparse(self.path).path
         if request_path == "/api/devices":
@@ -849,6 +871,7 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                 result = {
                     "settings": settings,
                     "testCaseUpdateCommand": test_case_update_command(settings),
+                    "networkZone": self.network_zone,
                 }
                 status = 200
             except RuntimeError as error:
@@ -1013,6 +1036,10 @@ def main() -> None:
             file=sys.stderr,
         )
         raise SystemExit(1)
+
+    network_zone = detect_network_zone()
+    AppRequestHandler.network_zone = network_zone
+    print(f"Network zone: {network_zone}")
 
     try:
         server = create_server(handler)
