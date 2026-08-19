@@ -485,6 +485,7 @@ def start_test_cases(request_body: dict) -> dict:
             str(runner_path),
             case_name,
             str(inspection_mode),
+            device.strip(),
         ]
         log_path = TEST_RUN_LOG_DIRECTORY / f"{run_id}-{case_id}.log"
         status_path = TEST_RUN_LOG_DIRECTORY / f"{run_id}-{case_id}.status.json"
