@@ -12,6 +12,7 @@ import csv
 import json
 import os
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -517,6 +518,7 @@ def start_test_cases(request_body: dict) -> dict:
             popen_options["creationflags"] = subprocess.CREATE_NEW_CONSOLE
         else:
             command = worker_command
+            popen_options["start_new_session"] = True
         display_command = subprocess.list2cmdline(test_command)
         processes.append(
             {
@@ -557,6 +559,13 @@ def start_test_cases(request_body: dict) -> dict:
 def execute_test_run_sequentially(run: dict) -> None:
     """Execute every selected case in order, with at most one active process."""
     for process_info in run["processes"]:
+        if run.get("_stopRequested"):
+            mark_process_interrupted(
+                process_info,
+                run.get("_interruptionMessage", "The test run was closed manually."),
+            )
+            process_info["_state"] = "Finished"
+            continue
         process_info["_state"] = "Running"
         print(
             f"[test run: {run['title']}] cwd: {run['libraryPath']}\n"
@@ -572,6 +581,24 @@ def execute_test_run_sequentially(run: dict) -> None:
             process_info["_process"] = process
             process_info["processId"] = process.pid
             while not process_info["_statusPath"].exists():
+                if run.get("_stopRequested"):
+                    terminate_process_tree(process)
+                    mark_process_interrupted(
+                        process_info,
+                        "The test run was closed manually.",
+                    )
+                    break
+                if process.poll() is not None:
+                    interruption_message = (
+                        "The test execution window closed unexpectedly."
+                    )
+                    run["_stopRequested"] = True
+                    run["_interruptionMessage"] = interruption_message
+                    mark_process_interrupted(
+                        process_info,
+                        interruption_message,
+                    )
+                    break
                 time.sleep(0.2)
         except OSError as error:
             message = (
@@ -585,6 +612,71 @@ def execute_test_run_sequentially(run: dict) -> None:
             )
         finally:
             process_info["_state"] = "Finished"
+
+
+def mark_process_interrupted(process_info: dict, message: str) -> None:
+    """Record a terminal interrupted result when no normal status was produced."""
+    if not process_info["_logPath"].exists():
+        process_info["_logPath"].parent.mkdir(parents=True, exist_ok=True)
+        process_info["_logPath"].write_text("", encoding="utf-8")
+    with process_info["_logPath"].open("a", encoding="utf-8") as log_file:
+        log_file.write(f"\nExecution interrupted: {message}\n")
+    process_info["_statusPath"].write_text(
+        json.dumps({"exitCode": None, "interrupted": True, "message": message}),
+        encoding="utf-8",
+    )
+
+
+def terminate_process_tree(process: subprocess.Popen) -> None:
+    """Terminate the execution console and all of the test processes it owns."""
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def close_test_run(run_id: str) -> dict:
+    with TEST_RUNS_LOCK:
+        run = TEST_RUNS.get(run_id)
+        if run is None:
+            raise RuntimeError("Test run was not found.")
+        current = serialize_test_run(run)
+        if current["status"] != "Running":
+            return current
+        run["_stopRequested"] = True
+        run["_interruptionMessage"] = "The test run was closed manually."
+        active_processes = [
+            item.get("_process")
+            for item in run["processes"]
+            if item.get("_state") == "Running"
+        ]
+    for process in active_processes:
+        if process is not None:
+            terminate_process_tree(process)
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        result = serialize_test_run(run)
+        if result["status"] != "Running":
+            return result
+        time.sleep(0.05)
+    return serialize_test_run(run)
 
 
 def console_marker(console_output: str, label: str, expected: str) -> bool:
@@ -670,6 +762,7 @@ def evaluate_test_case(
     process_info: dict,
     console_output: str,
     exit_code: int | None,
+    interrupted: bool = False,
 ) -> dict:
     inspection_mode = process_info["inspectionMode"]
     checks = [
@@ -698,7 +791,7 @@ def evaluate_test_case(
         )
 
     finished = exit_code is not None
-    result = "Running" if not finished else "Passed" if all(
+    result = "Interrupted" if interrupted else "Running" if not finished else "Passed" if all(
         check["passed"] for check in checks
     ) else "Failed"
     report = resolve_report(run, process_info, console_output)
@@ -728,10 +821,15 @@ def serialize_test_run(run: dict) -> dict:
         except OSError:
             console_output = ""
         exit_code = None
+        interrupted = False
+        interruption_message = None
         try:
-            exit_code = json.loads(
+            status_record = json.loads(
                 process_info["_statusPath"].read_text(encoding="utf-8")
-            )["exitCode"]
+            )
+            exit_code = status_record["exitCode"]
+            interrupted = status_record.get("interrupted") is True
+            interruption_message = status_record.get("message")
         except (OSError, json.JSONDecodeError, KeyError, TypeError):
             pass
         evaluation = (
@@ -742,7 +840,13 @@ def serialize_test_run(run: dict) -> dict:
                 "reportLocation": None,
             }
             if process_state == "Pending"
-            else evaluate_test_case(run, process_info, console_output, exit_code)
+            else evaluate_test_case(
+                run,
+                process_info,
+                console_output,
+                exit_code,
+                interrupted,
+            )
         )
         combined_output.append(
             f"===== {process_info['testCaseName']} =====\n{console_output}"
@@ -756,6 +860,7 @@ def serialize_test_run(run: dict) -> dict:
             | {
                 "consoleOutput": console_output,
                 "exitCode": exit_code,
+                "interruptionMessage": interruption_message,
                 **evaluation,
             }
         )
@@ -770,6 +875,11 @@ def serialize_test_run(run: dict) -> dict:
     failed_count = sum(
         1 for process_info in finished_processes if process_info["result"] == "Failed"
     )
+    interrupted_count = sum(
+        1
+        for process_info in finished_processes
+        if process_info["result"] == "Interrupted"
+    )
     total_processes = len(processes)
     return {
         "id": run["id"],
@@ -780,6 +890,8 @@ def serialize_test_run(run: dict) -> dict:
         "status": (
             "Running"
             if unfinished_count
+            else "Interrupted"
+            if interrupted_count
             else "Failed"
             if failed_count
             else "Completed"
@@ -789,6 +901,7 @@ def serialize_test_run(run: dict) -> dict:
         "executedProcesses": len(finished_processes),
         "passedProcesses": passed_count,
         "failedProcesses": failed_count,
+        "interruptedProcesses": interrupted_count,
         "progress": (
             round(len(finished_processes) / total_processes * 100)
             if total_processes
@@ -895,6 +1008,20 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         request_path = urlparse(self.path).path
+        close_match = re.fullmatch(
+            r"/api/test-runs/([^/]+)/close",
+            request_path,
+        )
+        if close_match:
+            try:
+                result = close_test_run(unquote(close_match.group(1)))
+                status = 200
+            except (RuntimeError, OSError) as error:
+                result = {"error": str(error)}
+                status = 404
+            send_json(self, status, result)
+            return
+
         report_match = re.fullmatch(
             r"/api/test-runs/([^/]+)/reports/([^/]+)/open",
             request_path,

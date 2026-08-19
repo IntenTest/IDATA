@@ -261,6 +261,15 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Unable to open the inspection report.": "无法打开检测报告。",
   "Waiting": "等待中",
   "Test execution is in progress.": "测试正在执行，请等待结果更新。",
+  "Close test run": "强制关闭任务",
+  "Closing...": "正在关闭……",
+  "Close this test run?": "确认强制关闭此任务？",
+  "The active execution window and all remaining test cases will be stopped. This action cannot be undone.": "执行窗口及所有剩余测试用例都将被终止，此操作无法撤销。",
+  "Test run closed.": "测试任务已强制关闭。",
+  "Unable to close the test run.": "无法关闭测试任务。",
+  "Execution interrupted": "执行中断",
+  "Interrupted": "执行中断",
+  "The test execution was interrupted before completion.": "测试执行在完成前被中断。",
   "Task command center": "任务指挥中心",
   "Plan, assign, and deliver release work from one focused workspace.": "在一个专注的工作区中规划、分配并交付发布工作。",
   "Total tasks": "任务总数",
@@ -775,6 +784,7 @@ const App = {
     const suitePageSize = ref(20);
     const testRunStarted = ref(false);
     const testRunStarting = ref(false);
+    const testRunClosing = ref(false);
     const testRunError = ref("");
     const testRunExecution = ref(null);
     const testCasesLoading = ref(false);
@@ -1696,6 +1706,46 @@ const App = {
       }
     }
 
+    async function closeTestRun() {
+      if (!selectedTestRun.value || selectedTestRun.value.status !== "Running") {
+        return;
+      }
+      try {
+        await ElementPlus.ElMessageBox.confirm(
+          t("The active execution window and all remaining test cases will be stopped. This action cannot be undone."),
+          t("Close this test run?"),
+          {
+            confirmButtonText: t("Close test run"),
+            cancelButtonText: t("Cancel"),
+            type: "warning",
+          },
+        );
+      } catch (_error) {
+        return;
+      }
+
+      testRunClosing.value = true;
+      try {
+        const runId = encodeURIComponent(selectedTestRun.value.id);
+        const response = await fetch(`/api/test-runs/${runId}/close`, {
+          method: "POST",
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || "Unable to close the test run.");
+        }
+        upsertActiveTestRun(result);
+        ElementPlus.ElMessage({ message: t("Test run closed."), type: "success" });
+      } catch (error) {
+        ElementPlus.ElMessage({
+          message: error instanceof Error ? error.message : t("Unable to close the test run."),
+          type: "error",
+        });
+      } finally {
+        testRunClosing.value = false;
+      }
+    }
+
     function backToTestRuns() {
       selectView("Tasks");
     }
@@ -1704,6 +1754,7 @@ const App = {
       return {
         Completed: "success",
         Failed: "danger",
+        Interrupted: "danger",
         Running: "warning",
         Blocked: "danger",
         Ready: "info",
@@ -2085,6 +2136,7 @@ const App = {
       openCreateDialog,
       openCreateSuiteDialog,
       openTestReport,
+      closeTestRun,
       pageSize,
       paginatedTestCases,
       paginatedTestSuites,
@@ -2144,6 +2196,7 @@ const App = {
       testRunReady,
       testRunStarted,
       testRunStarting,
+      testRunClosing,
       testRunError,
       testRunExecution,
       testCasesLoading,
@@ -2470,7 +2523,7 @@ const App = {
                   aria-label="Filter test runs by status"
                 >
                   <el-option
-                    v-for="status in ['Running', 'Ready', 'Blocked', 'Failed', 'Completed']"
+                    v-for="status in ['Running', 'Ready', 'Blocked', 'Failed', 'Interrupted', 'Completed']"
                     :key="status"
                     :label="t(status)"
                     :value="status"
@@ -2559,22 +2612,33 @@ const App = {
                   <p class="eyebrow">{{ selectedTestRun.id }} · {{ t('Run details') }}</p>
                   <h3>{{ displayValue(selectedTestRun.title) }}</h3>
                 </div>
-                <el-tag
-                  class="run-status-tag"
-                  :type="runStatusType(selectedTestRun.status)"
-                  effect="light"
-                  round
-                >
-                  <el-icon
-                    v-if="selectedTestRun.status === 'Running'"
-                    class="is-loading"
+                <div class="run-detail-actions">
+                  <el-button
+                    v-if="selectedTestRun.liveProcessRun && selectedTestRun.status === 'Running'"
+                    type="danger"
+                    plain
+                    :loading="testRunClosing"
+                    @click="closeTestRun"
                   >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <circle cx="12" cy="12" r="9" />
-                    </svg>
-                  </el-icon>
-                  {{ t(selectedTestRun.status) }}
-                </el-tag>
+                    {{ t(testRunClosing ? 'Closing...' : 'Close test run') }}
+                  </el-button>
+                  <el-tag
+                    class="run-status-tag"
+                    :type="runStatusType(selectedTestRun.status)"
+                    effect="light"
+                    round
+                  >
+                    <el-icon
+                      v-if="selectedTestRun.status === 'Running'"
+                      class="is-loading"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9" />
+                      </svg>
+                    </el-icon>
+                    {{ t(selectedTestRun.status) }}
+                  </el-tag>
+                </div>
               </div>
               <p class="run-description">{{ displayValue(selectedTestRun.description) }}</p>
 
@@ -2636,6 +2700,8 @@ const App = {
               <p class="run-result-note">
                 {{ t(selectedTestRun.status === 'Running'
                   ? 'Test execution is in progress.'
+                  : selectedTestRun.status === 'Interrupted'
+                  ? 'The test execution was interrupted before completion.'
                   : selectedTestRun.status === 'Blocked'
                   ? 'One blocked case requires a restored test account before execution can continue.'
                   : selectedTestRun.failed || selectedTestRun.blocked
@@ -2670,6 +2736,8 @@ const App = {
                         ? 'success'
                         : testCase.result === 'Failed'
                           ? 'danger'
+                          : testCase.result === 'Interrupted'
+                            ? 'danger'
                           : testCase.result === 'Running'
                             ? 'warning'
                             : 'info'"

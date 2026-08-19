@@ -840,6 +840,13 @@ h3 {
   line-height: 1.35;
 }
 
+.run-detail-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
 .run-description {
   max-width: 760px;
   margin: 12px 0 20px;
