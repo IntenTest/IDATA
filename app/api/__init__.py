@@ -1,1 +1,1 @@
-"""Backend API package for Oh Wemby."""
+"""Backend API package for IDATA."""

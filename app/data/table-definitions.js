@@ -1,4 +1,4 @@
-window.OhWembyTableDefinitions = Object.freeze({
+window.IDATATableDefinitions = Object.freeze({
   testCases: Object.freeze({
     endpoint: "/api/v1/test-cases",
     rowKey: "id",

@@ -6,5 +6,5 @@ __pycache__/
 .mypy_cache/
 *.log
 app/logs/test-runs/
-app/.ohwemby.pid
+app/.idata.pid
 Testcases/

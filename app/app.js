@@ -9,9 +9,10 @@ const {
   ref,
   watch,
 } = Vue;
-const TABLE_DEFINITIONS = window.OhWembyTableDefinitions;
+const TABLE_DEFINITIONS = window.IDATATableDefinitions;
 
 const CHINESE_TRANSLATIONS = Object.freeze({
+  "IDATA Self-Test Platform": "IDATA 自测试平台",
   Overview: "概览",
   Tasks: "任务",
   Devices: "设备管理",
@@ -630,7 +631,7 @@ const HISTORICAL_RUN_DEVICES = [
 ];
 
 const DEFAULT_APP_SETTINGS = Object.freeze({
-  projectName: "UI自动化测试平台",
+  projectName: "IDATA",
   releaseName: "FangTian 1.10-1.12",
   defaultEnvironment: "HarmonyOS",
   defaultOwner: "kouyanan 30030842",
@@ -681,7 +682,7 @@ function buildHistoricalTestRuns(count) {
 
 const App = {
   setup() {
-    const storedLanguage = window.localStorage.getItem("oh-wemby-language");
+    const storedLanguage = window.localStorage.getItem("idata-language");
     const language = ref(
       storedLanguage === "en" ? "en" : "zh-CN",
     );
@@ -760,7 +761,7 @@ const App = {
     const testCaseTableRef = ref(null);
     const testCaseTreeRef = ref(null);
     const testCaseViewMode = ref(
-      window.localStorage.getItem("oh-wemby-test-case-view") === "explorer"
+      window.localStorage.getItem("idata-test-case-view") === "explorer"
         ? "explorer"
         : "list",
     );
@@ -1253,9 +1254,11 @@ const App = {
       testRunCurrentPage.value = 1;
     });
     watch(language, (value) => {
-      window.localStorage.setItem("oh-wemby-language", value);
+      window.localStorage.setItem("idata-language", value);
       document.documentElement.lang = value;
-      document.title = "UI自动化测试平台";
+      document.title = value === "zh-CN"
+        ? "IDATA · 基于意图的自动化测试助手-自测试平台"
+        : "IDATA · Intent Driven Auto Test Assistant";
     }, { immediate: true });
     watch(activeView, (view) => {
       if (
@@ -1321,7 +1324,7 @@ const App = {
 
     function changeTestCaseViewMode(mode) {
       testCaseViewMode.value = mode;
-      window.localStorage.setItem("oh-wemby-test-case-view", mode);
+      window.localStorage.setItem("idata-test-case-view", mode);
       nextTick(() => {
         if (mode === "explorer") {
           testCaseTreeRef.value?.setCheckedKeys(
@@ -2164,8 +2167,13 @@ const App = {
   template: `
     <div class="app-shell">
       <aside class="sidebar">
-        <a class="brand" href="#" aria-label="UI自动化测试平台首页">
-          <span>{{ appSettings.projectName }}</span>
+        <a
+          class="brand"
+          href="#"
+          :aria-label="t('IDATA Self-Test Platform') + (language === 'zh-CN' ? '首页' : ' home')"
+          title="Intent Driven Auto Test Assistant · 基于意图的自动化测试助手-自测试平台"
+        >
+          <span>{{ t('IDATA Self-Test Platform') }}</span>
         </a>
 
         <nav class="nav-list" :aria-label="t('Primary navigation')">

@@ -19,10 +19,10 @@ class DatabaseSettings:
     @classmethod
     def from_environment(cls) -> "DatabaseSettings":
         required_names = (
-            "OHWEMBY_DB_HOST",
-            "OHWEMBY_DB_NAME",
-            "OHWEMBY_DB_USER",
-            "OHWEMBY_DB_PASSWORD",
+            "IDATA_DB_HOST",
+            "IDATA_DB_NAME",
+            "IDATA_DB_USER",
+            "IDATA_DB_PASSWORD",
         )
         missing = [name for name in required_names if not os.environ.get(name)]
         if missing:
@@ -30,15 +30,15 @@ class DatabaseSettings:
             raise RuntimeError(f"Missing required database environment variables: {names}")
 
         return cls(
-            host=os.environ["OHWEMBY_DB_HOST"],
-            port=_positive_integer("OHWEMBY_DB_PORT", default=3306),
-            database=os.environ["OHWEMBY_DB_NAME"],
-            user=os.environ["OHWEMBY_DB_USER"],
-            password=os.environ["OHWEMBY_DB_PASSWORD"],
+            host=os.environ["IDATA_DB_HOST"],
+            port=_positive_integer("IDATA_DB_PORT", default=3306),
+            database=os.environ["IDATA_DB_NAME"],
+            user=os.environ["IDATA_DB_USER"],
+            password=os.environ["IDATA_DB_PASSWORD"],
             connect_timeout_seconds=_positive_integer(
-                "OHWEMBY_DB_CONNECT_TIMEOUT", default=10
+                "IDATA_DB_CONNECT_TIMEOUT", default=10
             ),
-            ssl_ca=os.environ.get("OHWEMBY_DB_SSL_CA") or None,
+            ssl_ca=os.environ.get("IDATA_DB_SSL_CA") or None,
         )
 
 

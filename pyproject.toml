@@ -1,7 +1,7 @@
 [project]
-name = "ohwemby"
+name = "idata"
 version = "0.1.0"
-description = "Ohwemby application"
+description = "IDATA - Intent Driven Auto Test Assistant"
 requires-python = "==3.12.10"
 dependencies = []
 

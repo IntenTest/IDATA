@@ -17,7 +17,7 @@ HOST = "127.0.0.1"
 PORT = 54321
 APP_DIRECTORY = Path(__file__).resolve().parent
 START_SCRIPT = APP_DIRECTORY / "start.py"
-PID_PATH = APP_DIRECTORY / ".ohwemby.pid"
+PID_PATH = APP_DIRECTORY / ".idata.pid"
 
 
 def port_is_available() -> bool:

@@ -17,14 +17,14 @@ When one is selected, isolate it in a connection factory passed to
 Production and local credentials must be supplied outside Git:
 
 ```text
-OHWEMBY_DB_HOST
-OHWEMBY_DB_PORT=3306
-OHWEMBY_DB_NAME
-OHWEMBY_DB_USER
-OHWEMBY_DB_PASSWORD
-OHWEMBY_DB_CONNECT_TIMEOUT=10
-OHWEMBY_DB_SSL_CA
+IDATA_DB_HOST
+IDATA_DB_PORT=3306
+IDATA_DB_NAME
+IDATA_DB_USER
+IDATA_DB_PASSWORD
+IDATA_DB_CONNECT_TIMEOUT=10
+IDATA_DB_SSL_CA
 ```
 
-`OHWEMBY_DB_SSL_CA` is optional in code, but remote production connections
+`IDATA_DB_SSL_CA` is optional in code, but remote production connections
 should use TLS when the MySQL server supports it.

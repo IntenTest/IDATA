@@ -1,4 +1,4 @@
--- Initial Oh Wemby schema for MySQL 8.0 or later.
+-- Initial IDATA schema for MySQL 8.0 or later.
 
 CREATE TABLE users (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

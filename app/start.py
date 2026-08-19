@@ -31,8 +31,8 @@ MODEL_CONFIG_PATH = (
 ).resolve()
 DEFAULT_MODEL_NAME = "Qwen3.8-27B-Q4"
 DEFAULT_MODEL_API_KEY = ""
-MODEL_API_KEY_ENVIRONMENT_VARIABLE = "OHWEMBY_MODEL_API_KEY"
-PID_PATH = APP_DIRECTORY / ".ohwemby.pid"
+MODEL_API_KEY_ENVIRONMENT_VARIABLE = "IDATA_MODEL_API_KEY"
+PID_PATH = APP_DIRECTORY / ".idata.pid"
 VENDOR_PACKAGES = frozenset(("vue-3.5.24", "element-plus-2.11.8"))
 HDC_TIMEOUT_SECONDS = 10
 NETWORK_ZONE_PROBE_HOST = "10.90.65.189"
@@ -46,7 +46,7 @@ TEST_RUNS_LOCK = Lock()
 TEST_RUN_LOG_DIRECTORY = APP_DIRECTORY / "logs" / "test-runs"
 TEST_PROCESS_RUNNER = APP_DIRECTORY / "run_test_process.py"
 DEFAULT_SETTINGS = {
-    "projectName": "UI自动化测试平台",
+    "projectName": "IDATA",
     "releaseName": "FangTian 1.10-1.12",
     "defaultEnvironment": "HarmonyOS",
     "defaultOwner": "kouyanan 30030842",
