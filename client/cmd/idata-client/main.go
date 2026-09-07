@@ -172,7 +172,7 @@ func run(logger *slog.Logger, logFile *os.File) error {
 	serverIP, _ := serverEndpoint(*serverURL)
 	ui, err := startClientUI(clientUIInitial{
 		ServerIP: serverIP, Username: identity.Username, Hostname: identity.Hostname,
-		LocalIP: identity.LocalIP, MACAddress: identity.MACAddress, AutoConnect: validServerIP(serverIP),
+		LocalIP: identity.LocalIP, MACAddress: identity.MACAddress, AutoConnect: launchServerURL != "",
 	}, logger, logFile)
 	if err != nil {
 		return err
@@ -200,6 +200,22 @@ func run(logger *slog.Logger, logFile *os.File) error {
 	}
 	events := make(chan connectionEvent, 16)
 	launchRequests := make(chan string, 1)
+	if *browserBridgeAddress != "off" {
+		startBrowserBridge(ctx, *serverURL, *browserBridgeAddress, *clientID, deviceToken, func(launchURL string) error {
+			if err := validateLaunchServerURL(launchURL); err != nil {
+				return err
+			}
+			if err := validateServerURL(launchURL, *allowInsecure); err != nil {
+				return err
+			}
+			select {
+			case launchRequests <- launchURL:
+				return nil
+			default:
+				return errors.New("another launch is already pending")
+			}
+		}, logger)
+	}
 	var cancelConnection context.CancelFunc
 	var activeConnectionContext context.Context
 	generation := 0
@@ -296,22 +312,6 @@ func run(logger *slog.Logger, logFile *os.File) error {
 		activeURL = candidate
 		cancelConnection = cancel
 		activeConnectionContext = connectionCtx
-		if *browserBridgeAddress != "off" {
-			startBrowserBridge(connectionCtx, candidate, *browserBridgeAddress, *clientID, deviceToken, func(launchURL string) error {
-				if err := validateLaunchServerURL(launchURL); err != nil {
-					return err
-				}
-				if err := validateServerURL(launchURL, *allowInsecure); err != nil {
-					return err
-				}
-				select {
-				case launchRequests <- launchURL:
-					return nil
-				default:
-					return errors.New("another launch is already pending")
-				}
-			}, logger)
-		}
 		if agentToken == "" {
 			startEnrollment(connectionCtx, currentGeneration, candidate)
 			return
