@@ -34,6 +34,8 @@ const (
 	defaultBrowserBridgeAddress = "127.0.0.1:17891"
 	specialServerIP             = "10.90.65.189"
 	specialServerPort           = "12345"
+	publicServerIP              = "43.156.108.175"
+	publicServerPort            = "80"
 	defaultServerURL            = "ws://43.156.108.175/ws/agent"
 )
 
@@ -588,6 +590,9 @@ func serverPortForHost(host, previousURL string) string {
 	host = strings.TrimSpace(strings.Trim(host, "[]"))
 	if host == specialServerIP {
 		return specialServerPort
+	}
+	if host == publicServerIP {
+		return publicServerPort
 	}
 	if parsed, err := url.Parse(previousURL); err == nil && parsed.Hostname() == host {
 		if port := parsed.Port(); port != "" {

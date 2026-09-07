@@ -254,6 +254,8 @@ func TestServerPortForHost(t *testing.T) {
 		name, host, previous, want string
 	}{
 		{name: "special intranet server", host: "10.90.65.189", want: "12345"},
+		{name: "public server", host: "43.156.108.175", want: "80"},
+		{name: "public server replaces an old saved port", host: "43.156.108.175", previous: "ws://43.156.108.175:12345/ws/agent", want: "80"},
 		{name: "other server", host: "10.90.65.190", want: "80"},
 		{name: "special server replaces an old saved port", host: "10.90.65.189", previous: "ws://10.90.65.189:80/ws/agent", want: "12345"},
 		{name: "old special port does not follow another host", host: "10.90.65.190", previous: "ws://10.90.65.189:12345/ws/agent", want: "80"},
