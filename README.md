@@ -54,6 +54,11 @@ Client credentials are saved beside its executable in `bin/idata-client.json`.
 Keep this file private; do not distribute an installation directory after pairing
 without excluding credentials and local logs/settings.
 
+The Windows client can manage the local execution service automatically. Set
+`execution_script` in `idata-client.json` to the execution PC's
+`idata/app/start.py`; launching the EXE then starts that service in the background,
+keeps the agent connected, and stops the managed service when the client exits.
+
 ## Preserved functions and integration changes
 
 - Original overview, devices, test cases, suites, test creation/details, settings,

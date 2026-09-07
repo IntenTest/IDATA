@@ -25,6 +25,7 @@ import (
 	"idata-client/internal/agent"
 	"idata-client/internal/browserbridge"
 	"idata-client/internal/enrollment"
+	"idata-client/internal/executionservice"
 	"idata-client/internal/pairingprompt"
 	"idata-client/internal/urlprotocol"
 )
@@ -116,6 +117,8 @@ func run(logger *slog.Logger, logFile *os.File) error {
 	browserBridgeAddress := flag.String("browser-bridge", envOr("IDATA_BROWSER_BRIDGE_ADDR", valueOr(fileConfig.BrowserBridgeAddress, defaultBrowserBridgeAddress)), "loopback browser pairing and launcher handoff address, or off")
 	confirmBrowserPairing := flag.Bool("confirm-browser-pairing", envBool("IDATA_CONFIRM_BROWSER_PAIRING", boolOr(fileConfig.ConfirmBrowserPairing, false)), "show a legacy local confirmation window for v0.4 browser pairing requests")
 	registerURLProtocol := flag.Bool("register-url-protocol", envBool("IDATA_REGISTER_URL_PROTOCOL", boolOr(fileConfig.RegisterURLProtocol, true)), "register the idata:// browser launcher for the current Windows user")
+	executionScript := flag.String("execution-script", envOr("IDATA_EXECUTION_SCRIPT", fileConfig.ExecutionScript), "path to the local IDATA execution service start.py")
+	pythonExecutable := flag.String("python", envOr("IDATA_PYTHON_EXECUTABLE", valueOr(fileConfig.PythonExecutable, "python")), "Python executable used for the local IDATA execution service")
 	unregisterURLProtocol := flag.Bool("unregister-url-protocol", false, "remove the idata:// browser launcher for the current Windows user and exit")
 	browserLogin := flag.Bool("browser-login", false, "start from an idata:// browser login link")
 	flag.Parse()
@@ -179,6 +182,15 @@ func run(logger *slog.Logger, logFile *os.File) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	stopExecutionService, executionErr := executionservice.Ensure(ctx, executionservice.Config{
+		ScriptPath: *executionScript, PythonExecutable: *pythonExecutable,
+		Output: logFile, Logger: logger,
+	})
+	if executionErr != nil {
+		logger.Warn("local IDATA execution service could not be started", "error", executionErr)
+	} else {
+		defer stopExecutionService()
+	}
 	type connectionEvent struct {
 		generation int
 		kind       string
@@ -359,6 +371,8 @@ func run(logger *slog.Logger, logFile *os.File) error {
 			switch event.kind {
 			case "connected":
 				fileConfig.ServerURL = activeURL
+				fileConfig.ExecutionScript = *executionScript
+				fileConfig.PythonExecutable = *pythonExecutable
 				if err := saveFileConfig(fileConfig); err != nil {
 					logger.Warn("failed to remember server address", "error", err)
 				}
@@ -410,6 +424,8 @@ type clientFileConfig struct {
 	BrowserBridgeAddress  string `json:"browser_bridge_address,omitempty"`
 	ConfirmBrowserPairing *bool  `json:"confirm_browser_pairing,omitempty"`
 	RegisterURLProtocol   *bool  `json:"register_url_protocol,omitempty"`
+	ExecutionScript       string `json:"execution_script,omitempty"`
+	PythonExecutable      string `json:"python_executable,omitempty"`
 }
 
 func newDeviceToken() (string, error) {

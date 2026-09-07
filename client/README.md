@@ -46,6 +46,8 @@ IDATA_SERVER_URL='ws://127.0.0.1:12345/ws/agent' ./idata-client
 | `IDATA_BROWSER_BRIDGE_ADDR` | 否 | `127.0.0.1:17891` | 浏览器配对和已运行 Client 启动参数交接的回环地址；设为 `off` 可关闭 |
 | `IDATA_CONFIRM_BROWSER_PAIRING` | 否 | `false` | 是否兼容 v0.4 的 Windows 本机确认请求 |
 | `IDATA_REGISTER_URL_PROTOCOL` | 否 | `true` | 当前 Windows 用户注册 `idata://` 免密登录唤起协议 |
+| `IDATA_EXECUTION_SCRIPT` | 否 | 自动查找 | 本机 IDATA 执行端 `start.py` 路径；Client 会自动在后台启动并管理它 |
+| `IDATA_PYTHON_EXECUTABLE` | 否 | `python` | 用于启动本机 IDATA 执行端的 Python 解释器 |
 
 管理员也可以通过 Windows PowerShell 预置隐藏配置：
 
@@ -122,6 +124,11 @@ idata-client.json
 
 客户端意外断线后会在状态页显示提示并按指数退避自动重连；用户主动中断连接时不会重连。
 客户端以当前 Windows 账户的权限执行命令，请遵循最小权限原则。
+
+启动时 Client 会检查 `127.0.0.1:54321`。若执行服务尚未运行，Client 会从配置路径，或
+EXE/当前目录附近的 `idata/app/start.py` 自动定位并在隐藏后台启动它；退出 Client 时会停止
+由本次 Client 启动的执行服务。发布目录与源码目录分离时，应在 `idata-client.json` 中设置
+`execution_script`，Windows 用户仍只需启动 EXE。
 
 ## 错误日志
 
