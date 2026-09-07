@@ -1,0 +1,12 @@
+[project]
+name = "idata"
+version = "0.1.0"
+description = "IDATA - Intent Driven Auto Test Assistant"
+requires-python = "==3.12.10"
+dependencies = []
+
+[dependency-groups]
+dev = []
+
+[tool.uv]
+package = false

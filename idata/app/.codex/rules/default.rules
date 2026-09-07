@@ -1,0 +1,13 @@
+# Allow the project's shared launcher to bind its required local port.
+prefix_rule(
+    pattern = ["python3", "start.py"],
+    decision = "allow",
+    justification = "Start the local application on its configured port.",
+    match = [
+        "python3 start.py",
+    ],
+    not_match = [
+        "python3 other.py",
+        "python start.py",
+    ],
+)

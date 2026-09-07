@@ -1,0 +1,1217 @@
+#!/usr/bin/env python3
+"""Serve the local application on its only supported port."""
+
+from datetime import datetime
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from threading import Lock, Thread
+from urllib.parse import unquote, urlparse
+import ast
+import csv
+import json
+import os
+import re
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import webbrowser
+
+
+HOST = "127.0.0.1"
+PORT = 54321
+APP_DIRECTORY = Path(__file__).resolve().parent
+PROJECT_DIRECTORY = APP_DIRECTORY.parent
+VENDOR_DIRECTORY = APP_DIRECTORY.parent / "vendor"
+SETTINGS_PATH = APP_DIRECTORY / "config" / "settings.json"
+MODEL_CONFIG_PATH = (
+    APP_DIRECTORY / ".." / ".." / "Phoebe-main" / "Phoebe" / "tools" / "llm_analyzer.py"
+).resolve()
+DEFAULT_MODEL_NAME = "Qwen3.8-27B-Q4"
+DEFAULT_MODEL_API_KEY = ""
+MODEL_API_KEY_ENVIRONMENT_VARIABLE = "IDATA_MODEL_API_KEY"
+PID_PATH = APP_DIRECTORY / ".idata.pid"
+VENDOR_PACKAGES = frozenset(("vue-3.5.24", "element-plus-2.11.8"))
+HDC_TIMEOUT_SECONDS = 10
+NETWORK_ZONE_PROBE_HOST = "10.90.65.189"
+NETWORK_ZONE_PROBE_TIMEOUT_SECONDS = 3
+DEFAULT_TEST_CASE_REPOSITORY_URL = (
+    "https://codehub-dg-y.huawei.com/k30030842/Testcases.git"
+)
+FALLBACK_TEST_CASE_REPOSITORY_URL = "https://github.com/IntenTest/Testcases.git"
+TEST_RUNS = {}
+TEST_RUNS_LOCK = Lock()
+TEST_RUN_LOG_DIRECTORY = APP_DIRECTORY / "logs" / "test-runs"
+TEST_PROCESS_RUNNER = APP_DIRECTORY / "run_test_process.py"
+DEFAULT_SETTINGS = {
+    "projectName": "IDATA",
+    "releaseName": "FangTian 1.10-1.12",
+    "defaultEnvironment": "HarmonyOS",
+    "defaultOwner": "kouyanan 30030842",
+    "testCaseRepositoryUrl": DEFAULT_TEST_CASE_REPOSITORY_URL,
+    "testCaseLibraryPath": "../Phoebe-main/Testcases",
+    "pythonExecutablePath": "../python310/python.exe",
+    "runTestCasesPath": "../Phoebe-main/Testcases/run_testcase.py",
+    "autoLoadDevices": True,
+    "deviceRefreshSeconds": 30,
+    "tablePageSize": 20,
+}
+SETTING_FIELD_TYPES = {
+    "projectName": str,
+    "releaseName": str,
+    "defaultEnvironment": str,
+    "defaultOwner": str,
+    "testCaseRepositoryUrl": str,
+    "testCaseLibraryPath": str,
+    "pythonExecutablePath": str,
+    "runTestCasesPath": str,
+    "autoLoadDevices": bool,
+    "deviceRefreshSeconds": int,
+    "tablePageSize": int,
+}
+DEVICE_PARAMETER_KEYS = (
+    ("model", "const.product.model"),
+    ("name", "const.product.name"),
+    ("osVersion", "const.product.os.dist.version"),
+    ("deviceType", "const.product.devicetype"),
+)
+
+
+def discover_hdc_devices() -> dict:
+    """Return connected HDC targets with useful system information."""
+    try:
+        result = subprocess.run(
+            ["hdc", "list", "targets", "-v"],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=HDC_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError:
+        return {
+            "devices": [],
+            "error": "HDC was not found. Install HDC and ensure it is available on PATH.",
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "devices": [],
+            "error": "HDC did not respond within 10 seconds.",
+        }
+    except OSError as error:
+        return {
+            "devices": [],
+            "error": f"Unable to start HDC: {error}.",
+        }
+
+    output = result.stdout.strip()
+    error_output = result.stderr.strip()
+    if result.returncode != 0:
+        detail = error_output or output or f"exit code {result.returncode}"
+        return {"devices": [], "error": f"HDC device search failed: {detail}"}
+
+    devices = []
+    for line in output.splitlines():
+        columns = line.split()
+        if not columns or columns[0].lower() in {"[empty]", "empty"}:
+            continue
+
+        target_id = columns[0]
+        status = columns[2] if len(columns) > 2 else "Connected"
+        if status.lower() != "connected":
+            continue
+
+        command = "; ".join(
+            f"param get {parameter}" for _, parameter in DEVICE_PARAMETER_KEYS
+        )
+        try:
+            details = subprocess.run(
+                ["hdc", "-t", target_id, "shell", command],
+                capture_output=True,
+                check=False,
+                text=True,
+                timeout=HDC_TIMEOUT_SECONDS,
+            )
+            values = [value.strip() for value in details.stdout.splitlines()]
+        except (OSError, subprocess.TimeoutExpired):
+            values = []
+        device = {
+            "id": target_id,
+            "status": status,
+        }
+        for index, (field, _) in enumerate(DEVICE_PARAMETER_KEYS):
+            device[field] = values[index] if index < len(values) else ""
+        devices.append(device)
+
+    return {"devices": devices, "error": None}
+
+
+def read_settings() -> dict:
+    if not SETTINGS_PATH.exists():
+        write_settings(DEFAULT_SETTINGS)
+        return dict(DEFAULT_SETTINGS)
+
+    try:
+        with SETTINGS_PATH.open(encoding="utf-8") as config_file:
+            loaded = json.load(config_file)
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"Unable to read settings config: {error}") from error
+
+    if not isinstance(loaded, dict):
+        raise RuntimeError("Settings config must contain a JSON object.")
+
+    return normalize_settings(loaded)
+
+
+def normalize_settings(raw_settings: dict) -> dict:
+    settings = dict(DEFAULT_SETTINGS)
+    for key, expected_type in SETTING_FIELD_TYPES.items():
+        if key not in raw_settings:
+            continue
+        value = raw_settings[key]
+        if expected_type is bool:
+            if not isinstance(value, bool):
+                raise RuntimeError(f"{key} must be true or false.")
+        elif expected_type is int:
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise RuntimeError(f"{key} must be an integer.")
+            if key in {"deviceRefreshSeconds", "tablePageSize"} and value < 1:
+                raise RuntimeError(f"{key} must be greater than zero.")
+        elif not isinstance(value, expected_type):
+            raise RuntimeError(f"{key} must be a string.")
+        settings[key] = value
+    return settings
+
+
+def write_settings(settings: dict) -> None:
+    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(settings, indent=2, ensure_ascii=False).encode("utf-8")
+    payload += b"\n"
+
+    with tempfile.NamedTemporaryFile(
+        "wb",
+        delete=False,
+        dir=str(SETTINGS_PATH.parent),
+        prefix=".settings.",
+    ) as temp_file:
+        temp_file.write(payload)
+        temp_name = temp_file.name
+
+    Path(temp_name).replace(SETTINGS_PATH)
+
+
+def model_config_assignment(source: str) -> tuple[ast.Assign, dict]:
+    """Return the MODEL_CONFIG assignment and its literal dictionary value."""
+    try:
+        module = ast.parse(source, filename=str(MODEL_CONFIG_PATH))
+    except SyntaxError as error:
+        raise RuntimeError(f"Unable to parse the model configuration file: {error}") from error
+
+    for node in module.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(
+            isinstance(target, ast.Name) and target.id == "MODEL_CONFIG"
+            for target in node.targets
+        ):
+            continue
+        try:
+            value = ast.literal_eval(node.value)
+        except (ValueError, TypeError, SyntaxError) as error:
+            raise RuntimeError("MODEL_CONFIG must be a Python dictionary literal.") from error
+        if not isinstance(value, dict):
+            raise RuntimeError("MODEL_CONFIG must be a Python dictionary literal.")
+        return node, value
+
+    raise RuntimeError("MODEL_CONFIG was not found in the model configuration file.")
+
+
+def read_model_config() -> dict:
+    if not MODEL_CONFIG_PATH.is_file():
+        raise RuntimeError(f"Model configuration file was not found: {MODEL_CONFIG_PATH}")
+    try:
+        source = MODEL_CONFIG_PATH.read_text(encoding="utf-8")
+    except OSError as error:
+        raise RuntimeError(f"Unable to read the model configuration file: {error}") from error
+
+    _, config = model_config_assignment(source)
+    return {
+        "api_base": str(config.get("api_base", "")),
+        "api_key": os.environ.get(
+            MODEL_API_KEY_ENVIRONMENT_VARIABLE,
+            str(config.get("api_key") or DEFAULT_MODEL_API_KEY),
+        ),
+        "model_name": str(config.get("model_name") or DEFAULT_MODEL_NAME),
+    }
+
+
+def write_model_config(incoming_config: dict) -> dict:
+    required_keys = ("api_base", "api_key", "model_name")
+    for key in required_keys:
+        if not isinstance(incoming_config.get(key), str):
+            raise RuntimeError(f"{key} must be a string.")
+
+    try:
+        source = MODEL_CONFIG_PATH.read_text(encoding="utf-8")
+    except OSError as error:
+        raise RuntimeError(f"Unable to read the model configuration file: {error}") from error
+
+    assignment, current_config = model_config_assignment(source)
+    current_config.update({key: incoming_config[key] for key in required_keys})
+    replacement = "MODEL_CONFIG = " + repr(current_config)
+    source_lines = source.splitlines(keepends=True)
+    start_offset = sum(len(line) for line in source_lines[: assignment.lineno - 1]) + assignment.col_offset
+    end_offset = sum(len(line) for line in source_lines[: assignment.end_lineno - 1]) + assignment.end_col_offset
+    updated_source = source[:start_offset] + replacement + source[end_offset:]
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            delete=False,
+            dir=str(MODEL_CONFIG_PATH.parent),
+            prefix=".llm_analyzer.",
+            encoding="utf-8",
+            newline="",
+        ) as temp_file:
+            temp_file.write(updated_source)
+            temp_name = temp_file.name
+        Path(temp_name).replace(MODEL_CONFIG_PATH)
+    except OSError as error:
+        raise RuntimeError(f"Unable to save the model configuration file: {error}") from error
+
+    return {key: incoming_config[key] for key in required_keys}
+
+
+def configured_path(raw_path: str) -> Path:
+    path = Path(raw_path).expanduser()
+    if not path.is_absolute():
+        path = PROJECT_DIRECTORY / path
+    return path.resolve()
+
+
+def detect_network_zone() -> str:
+    command = (
+        ["ping", "-n", "1", "-w", "3000", NETWORK_ZONE_PROBE_HOST]
+        if os.name == "nt"
+        else ["ping", "-c", "1", NETWORK_ZONE_PROBE_HOST]
+    )
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            check=False,
+            timeout=NETWORK_ZONE_PROBE_TIMEOUT_SECONDS,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return "blue"
+    return "yellow" if result.returncode == 0 else "blue"
+
+
+def test_case_update_command(settings: dict) -> str:
+    library_path = configured_path(settings["testCaseLibraryPath"])
+    return f'git -C "{library_path}" pull --ff-only'
+
+
+def read_test_case_mapping(library_path: Path) -> tuple[dict[str, dict], Path]:
+    required_columns = {
+        "模块_名称",
+        "模块_编号",
+        "应用_名称",
+        "应用_编号",
+        "用例_名称",
+        "用例_编号",
+    }
+    mapping_path = library_path / "中英文映射.csv"
+    if not mapping_path.is_file():
+        raise RuntimeError(f"The test case mapping CSV was not found: {mapping_path}")
+    try:
+        with mapping_path.open(encoding="utf-8-sig", newline="") as mapping_file:
+            reader = csv.DictReader(mapping_file)
+            if not required_columns.issubset(reader.fieldnames or []):
+                raise RuntimeError(
+                    f"The test case mapping CSV does not contain the required columns: {mapping_path}"
+                )
+            mapping = {}
+            for row in reader:
+                case_number = (row.get("用例_编号") or "").strip()
+                if not case_number or case_number in mapping:
+                    continue
+                mapping[case_number] = {
+                    "moduleName": (row.get("模块_名称") or "").strip(),
+                    "moduleCode": (row.get("模块_编号") or "").strip(),
+                    "applicationName": (row.get("应用_名称") or "").strip(),
+                    "applicationCode": (row.get("应用_编号") or "").strip(),
+                    "mappedCaseName": (row.get("用例_名称") or "").strip(),
+                }
+            return mapping, mapping_path
+    except (OSError, UnicodeError, csv.Error) as error:
+        raise RuntimeError(f"Unable to read the test case mapping CSV: {error}") from error
+
+
+def discover_test_cases(settings: dict | None = None) -> dict:
+    settings = settings or read_settings()
+    raw_library_path = settings["testCaseLibraryPath"].strip()
+    if not raw_library_path:
+        return {
+            "testCases": [],
+            "error": "Set the test case library path in Settings.",
+        }
+
+    library_path = configured_path(raw_library_path)
+    if not library_path.is_dir():
+        return {
+            "testCases": [],
+            "error": f"Test case library directory was not found: {library_path}",
+        }
+
+    test_case_paths = sorted(
+        path
+        for path in library_path.rglob("*")
+        if path.is_file()
+        and path.suffix.lower() == ".py"
+        and path.name.lower() != "__init__.py"
+    )
+    mapping, mapping_path = read_test_case_mapping(library_path)
+    paths_by_case_number = {
+        test_case_path.stem: test_case_path for test_case_path in test_case_paths
+    }
+    test_cases = []
+    for case_number, mapping_entry in mapping.items():
+        test_case_path = paths_by_case_number.get(case_number)
+        if test_case_path is None:
+            continue
+        relative_name = (
+            test_case_path.relative_to(library_path).with_suffix("").as_posix()
+        )
+        modified_time = datetime.fromtimestamp(
+            test_case_path.stat().st_mtime
+        ).astimezone()
+        test_cases.append(
+            {
+                "id": str(len(test_cases) + 1),
+                "title": mapping_entry["mappedCaseName"],
+                "executionName": case_number,
+                "path": relative_name,
+                "moduleName": mapping_entry["moduleName"],
+                "moduleCode": mapping_entry["moduleCode"],
+                "applicationName": mapping_entry["applicationName"],
+                "applicationCode": mapping_entry["applicationCode"],
+                "mappedCaseName": mapping_entry["mappedCaseName"],
+                "category": "Standard",
+                "status": "Not run",
+                "owner": settings["defaultOwner"],
+                "updated": modified_time.isoformat(timespec="seconds"),
+            }
+        )
+
+    discovered_names = {test_case_path.stem for test_case_path in test_case_paths}
+    discrepancies = [
+        {
+            "caseName": case_name,
+            "inMapping": case_name in mapping,
+            "hasFile": case_name in discovered_names,
+        }
+        for case_name in sorted(discovered_names.symmetric_difference(mapping))
+    ]
+    return {
+        "testCases": test_cases,
+        "mappingValidation": {
+            "mappingFile": mapping_path.relative_to(library_path).as_posix(),
+            "discrepancies": discrepancies,
+        },
+        "error": None,
+    }
+
+
+def start_test_cases(request_body: dict) -> dict:
+    raw_case_names = request_body.get("testCases")
+    inspection_mode = request_body.get("inspectionMode")
+    run_name = request_body.get("name")
+    device = request_body.get("device")
+    if (
+        not isinstance(raw_case_names, list)
+        or not raw_case_names
+        or not all(isinstance(name, str) and name for name in raw_case_names)
+    ):
+        raise RuntimeError("Select at least one test case.")
+    if inspection_mode not in (0, 1, 2):
+        raise RuntimeError("Inspection mode must be 0, 1, or 2.")
+    if not isinstance(run_name, str) or not run_name.strip():
+        raise RuntimeError("Enter a test run name.")
+    if not isinstance(device, str) or not device.strip():
+        raise RuntimeError("Select a device.")
+
+    settings = read_settings()
+    raw_library_path = settings["testCaseLibraryPath"].strip()
+    raw_python_path = settings["pythonExecutablePath"].strip()
+    raw_runner_path = settings["runTestCasesPath"].strip()
+    if not raw_library_path:
+        raise RuntimeError("Set the test case library path in Settings.")
+    if not raw_python_path:
+        raise RuntimeError("Set the Python executable path in Settings.")
+    if not raw_runner_path:
+        raise RuntimeError("Set the run_testcases path in Settings.")
+
+    library_path = configured_path(raw_library_path)
+    python_path = configured_path(raw_python_path)
+    runner_path = configured_path(raw_runner_path)
+    if not library_path.is_dir():
+        raise RuntimeError(f"Test case library directory was not found: {library_path}")
+    if not python_path.is_file():
+        raise RuntimeError(f"Python executable was not found: {python_path}")
+    if os.name == "nt" and python_path.name.lower() != "python.exe":
+        raise RuntimeError("Python executable path must end with python.exe.")
+    if not runner_path.is_file():
+        raise RuntimeError(f"run_testcases file was not found: {runner_path}")
+
+    discovered_cases = {
+        test_case["id"]: test_case
+        for test_case in discover_test_cases(settings)["testCases"]
+    }
+    case_ids = list(dict.fromkeys(raw_case_names))
+    missing_names = [name for name in case_ids if name not in discovered_cases]
+    if missing_names:
+        names = ", ".join(missing_names)
+        raise RuntimeError(f"Unknown test case selection: {names}")
+
+    run_id = f"TR-{int(time.time() * 1000)}"
+    processes = []
+    for case_id in case_ids:
+        test_case = discovered_cases[case_id]
+        case_name = test_case.get("executionName", test_case["title"])
+        test_command = [
+            str(python_path),
+            str(runner_path),
+            case_name,
+            str(inspection_mode),
+            device.strip(),
+        ]
+        log_path = TEST_RUN_LOG_DIRECTORY / f"{run_id}-{case_id}.log"
+        status_path = TEST_RUN_LOG_DIRECTORY / f"{run_id}-{case_id}.status.json"
+        worker_command = [
+            str(python_path),
+            str(TEST_PROCESS_RUNNER),
+            str(log_path),
+            str(status_path),
+            "--",
+            *test_command,
+        ]
+        popen_options = {
+            "cwd": library_path,
+        }
+        if os.name == "nt":
+            system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+            cmd_path = system_root / "System32" / "cmd.exe"
+            cmd_command = (
+                "chcp 65001 >nul"
+                ' & set "PYTHONUTF8=1"'
+                f" & {subprocess.list2cmdline(worker_command)}"
+            )
+            command = [
+                str(cmd_path),
+                "/d",
+                "/k",
+                cmd_command,
+            ]
+            popen_options["creationflags"] = subprocess.CREATE_NEW_CONSOLE
+        else:
+            command = worker_command
+            popen_options["start_new_session"] = True
+        display_command = subprocess.list2cmdline(test_command)
+        processes.append(
+            {
+                "testCase": case_id,
+                "testCaseName": case_name,
+                "inspectionMode": inspection_mode,
+                "processId": None,
+                "command": display_command,
+                "_logPath": log_path,
+                "_statusPath": status_path,
+                "_command": command,
+                "_popenOptions": popen_options,
+                "_state": "Pending",
+            }
+        )
+
+    started_at = datetime.now().astimezone()
+    run = {
+        "id": run_id,
+        "title": run_name.strip(),
+        "device": device.strip(),
+        "inspectionMode": inspection_mode,
+        "startedAt": started_at.isoformat(timespec="seconds"),
+        "libraryPath": library_path,
+        "processes": processes,
+    }
+    with TEST_RUNS_LOCK:
+        TEST_RUNS[run_id] = run
+    Thread(
+        target=execute_test_run_sequentially,
+        args=(run,),
+        daemon=True,
+        name=f"test-run-{run_id}",
+    ).start()
+    return serialize_test_run(run)
+
+
+def execute_test_run_sequentially(run: dict) -> None:
+    """Execute every selected case in order, with at most one active process."""
+    for process_info in run["processes"]:
+        if run.get("_stopRequested"):
+            mark_process_interrupted(
+                process_info,
+                run.get("_interruptionMessage", "The test run was closed manually."),
+            )
+            process_info["_state"] = "Finished"
+            continue
+        process_info["_state"] = "Running"
+        print(
+            f"[test run: {run['title']}] cwd: {run['libraryPath']}\n"
+            f"[test case: {process_info['testCaseName']}] command: "
+            f"{process_info['command']}",
+            flush=True,
+        )
+        try:
+            process = subprocess.Popen(
+                process_info["_command"],
+                **process_info["_popenOptions"],
+            )
+            process_info["_process"] = process
+            process_info["processId"] = process.pid
+            while not process_info["_statusPath"].exists():
+                if run.get("_stopRequested"):
+                    terminate_process_tree(process)
+                    mark_process_interrupted(
+                        process_info,
+                        "The test run was closed manually.",
+                    )
+                    break
+                if process.poll() is not None:
+                    interruption_message = (
+                        "The test execution window closed unexpectedly."
+                    )
+                    run["_stopRequested"] = True
+                    run["_interruptionMessage"] = interruption_message
+                    mark_process_interrupted(
+                        process_info,
+                        interruption_message,
+                    )
+                    break
+                time.sleep(0.2)
+        except OSError as error:
+            message = (
+                f"Unable to start {process_info['testCaseName']} with command "
+                f"{process_info['command']}: {error}\n"
+            )
+            process_info["_logPath"].write_text(message, encoding="utf-8")
+            process_info["_statusPath"].write_text(
+                json.dumps({"exitCode": 1}),
+                encoding="utf-8",
+            )
+        finally:
+            process_info["_state"] = "Finished"
+
+
+def mark_process_interrupted(process_info: dict, message: str) -> None:
+    """Record a terminal interrupted result when no normal status was produced."""
+    if not process_info["_logPath"].exists():
+        process_info["_logPath"].parent.mkdir(parents=True, exist_ok=True)
+        process_info["_logPath"].write_text("", encoding="utf-8")
+    with process_info["_logPath"].open("a", encoding="utf-8") as log_file:
+        log_file.write(f"\nExecution interrupted: {message}\n")
+    process_info["_statusPath"].write_text(
+        json.dumps({"exitCode": None, "interrupted": True, "message": message}),
+        encoding="utf-8",
+    )
+
+
+def terminate_process_tree(process: subprocess.Popen) -> None:
+    """Terminate the execution console and all of the test processes it owns."""
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def close_test_run(run_id: str) -> dict:
+    with TEST_RUNS_LOCK:
+        run = TEST_RUNS.get(run_id)
+        if run is None:
+            raise RuntimeError("Test run was not found.")
+        current = serialize_test_run(run)
+        if current["status"] != "Running":
+            return current
+        run["_stopRequested"] = True
+        run["_interruptionMessage"] = "The test run was closed manually."
+        active_processes = [
+            item.get("_process")
+            for item in run["processes"]
+            if item.get("_state") == "Running"
+        ]
+    for process in active_processes:
+        if process is not None:
+            terminate_process_tree(process)
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        result = serialize_test_run(run)
+        if result["status"] != "Running":
+            return result
+        time.sleep(0.05)
+    return serialize_test_run(run)
+
+
+def console_marker(console_output: str, label: str, expected: str) -> bool:
+    pattern = rf"{re.escape(label)}\s*[：:]?\s*{re.escape(expected)}"
+    return re.search(pattern, console_output, re.IGNORECASE) is not None
+
+
+def report_reference(console_output: str) -> tuple[str, str] | None:
+    lines = console_output.splitlines()
+
+    # Screenshot and recording inspection print their complete report paths
+    # after "汇总 HTML" and "检测报告", respectively. Search backwards so a
+    # later report replaces any earlier report mentioned in the same log.
+    for line in reversed(lines):
+        match = re.search(
+            r"(?:汇总\s*HTML|检测报告)\s*[：:]\s*(.+?)\s*$",
+            line,
+            re.IGNORECASE,
+        )
+        if match:
+            report_value = match.group(1).strip().strip("\"'")
+            if report_value:
+                return "", report_value
+
+    # Retain compatibility with older recording output that only printed a
+    # storage directory followed by the report location on a later line.
+    for index in range(len(lines) - 1, -1, -1):
+        line = lines[index]
+        match = re.search(r"日志存储路径\s*[：:]\s*(.*)", line)
+        if not match:
+            continue
+        storage_path = match.group(1).strip().strip("\"'")
+        for report_line in lines[index + 1 :]:
+            report_line = report_line.strip()
+            if not report_line:
+                continue
+            url_match = re.search(r"https?://\S+", report_line)
+            if url_match:
+                return storage_path, url_match.group(0).rstrip(".,;")
+            if re.match(r"^[A-Za-z]:[\\/]", report_line) or report_line.startswith(
+                "\\\\"
+            ):
+                path_value = report_line
+            else:
+                path_value = re.split(r"[：:]", report_line, maxsplit=1)[-1]
+            return storage_path, path_value.strip().strip("\"'")
+    return None
+
+
+def resolve_report(
+    run: dict,
+    process_info: dict,
+    console_output: str,
+) -> tuple[str, str] | None:
+    process_info.pop("_reportPath", None)
+    reference = report_reference(console_output)
+    if not reference:
+        return None
+    storage_path, report_value = reference
+    if report_value.startswith(("http://", "https://")):
+        return report_value, report_value
+
+    report_path = Path(report_value).expanduser()
+    candidates = [report_path]
+    if not report_path.is_absolute():
+        library_path = run["libraryPath"]
+        candidates = [
+            library_path / report_path,
+            library_path / storage_path / report_path,
+        ]
+    for candidate in candidates:
+        candidate = candidate.resolve()
+        if candidate.is_dir():
+            candidate = candidate / "index.html"
+        if candidate.is_file():
+            process_info["_reportPath"] = candidate
+            return candidate.as_uri(), str(candidate)
+    return None
+
+
+def evaluate_test_case(
+    run: dict,
+    process_info: dict,
+    console_output: str,
+    exit_code: int | None,
+    interrupted: bool = False,
+) -> dict:
+    inspection_mode = process_info["inspectionMode"]
+    checks = [
+        {
+            "label": "Automation result",
+            "passed": console_marker(console_output, "【最终结果】", "pass"),
+        },
+        {
+            "label": "Log inspection",
+            "passed": console_marker(console_output, "日志检查", "True"),
+        },
+    ]
+    if inspection_mode == 1:
+        checks.append(
+            {
+                "label": "Screenshot inspection",
+                "passed": console_marker(console_output, "用例截图检测", "True"),
+            }
+        )
+    elif inspection_mode == 2:
+        checks.append(
+            {
+                "label": "Recording inspection",
+                "passed": console_marker(console_output, "用例录屏检测", "True"),
+            }
+        )
+
+    finished = exit_code is not None
+    result = "Interrupted" if interrupted else "Running" if not finished else "Passed" if all(
+        check["passed"] for check in checks
+    ) else "Failed"
+    report = resolve_report(run, process_info, console_output)
+    return {
+        "result": result,
+        "checks": checks,
+        "reportUrl": report[0] if report else None,
+        "reportLocation": report[1] if report else None,
+    }
+
+
+def serialize_test_run(run: dict) -> dict:
+    processes = run["processes"]
+    unfinished_count = sum(
+        1 for process_info in processes
+        if process_info.get("_state") in {"Pending", "Running"}
+    )
+    serialized_processes = []
+    combined_output = []
+    for process_info in processes:
+        process_state = process_info.get("_state", "Finished")
+        try:
+            console_output = process_info["_logPath"].read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+        except OSError:
+            console_output = ""
+        exit_code = None
+        interrupted = False
+        interruption_message = None
+        try:
+            status_record = json.loads(
+                process_info["_statusPath"].read_text(encoding="utf-8")
+            )
+            exit_code = status_record["exitCode"]
+            interrupted = status_record.get("interrupted") is True
+            interruption_message = status_record.get("message")
+        except (OSError, json.JSONDecodeError, KeyError, TypeError):
+            pass
+        evaluation = (
+            {
+                "result": "Pending",
+                "checks": [],
+                "reportUrl": None,
+                "reportLocation": None,
+            }
+            if process_state == "Pending"
+            else evaluate_test_case(
+                run,
+                process_info,
+                console_output,
+                exit_code,
+                interrupted,
+            )
+        )
+        combined_output.append(
+            f"===== {process_info['testCaseName']} =====\n{console_output}"
+        )
+        serialized_processes.append(
+            {
+                key: value
+                for key, value in process_info.items()
+                if not key.startswith("_")
+            }
+            | {
+                "consoleOutput": console_output,
+                "exitCode": exit_code,
+                "interruptionMessage": interruption_message,
+                **evaluation,
+            }
+        )
+    finished_processes = [
+        process_info
+        for process_info in serialized_processes
+        if process_info["result"] != "Running"
+    ]
+    passed_count = sum(
+        1 for process_info in finished_processes if process_info["result"] == "Passed"
+    )
+    failed_count = sum(
+        1 for process_info in finished_processes if process_info["result"] == "Failed"
+    )
+    interrupted_count = sum(
+        1
+        for process_info in finished_processes
+        if process_info["result"] == "Interrupted"
+    )
+    total_processes = len(processes)
+    return {
+        "id": run["id"],
+        "title": run["title"],
+        "device": run["device"],
+        "inspectionMode": run["inspectionMode"],
+        "startedAt": run["startedAt"],
+        "status": (
+            "Running"
+            if unfinished_count
+            else "Interrupted"
+            if interrupted_count
+            else "Failed"
+            if failed_count
+            else "Completed"
+        ),
+        "runningProcesses": unfinished_count,
+        "totalProcesses": total_processes,
+        "executedProcesses": len(finished_processes),
+        "passedProcesses": passed_count,
+        "failedProcesses": failed_count,
+        "interruptedProcesses": interrupted_count,
+        "progress": (
+            round(len(finished_processes) / total_processes * 100)
+            if total_processes
+            else 0
+        ),
+        "consoleOutput": "\n\n".join(combined_output),
+        "started": serialized_processes,
+    }
+
+
+def list_test_runs() -> dict:
+    with TEST_RUNS_LOCK:
+        runs = [serialize_test_run(run) for run in TEST_RUNS.values()]
+    runs.sort(key=lambda run: run["startedAt"], reverse=True)
+    return {"testRuns": runs}
+
+
+def send_json(handler: SimpleHTTPRequestHandler, status: int, value: dict) -> None:
+    payload = json.dumps(value, ensure_ascii=False).encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json; charset=utf-8")
+    handler.send_header("Content-Length", str(len(payload)))
+    handler.send_header("Cache-Control", "no-store")
+    handler.end_headers()
+    handler.wfile.write(payload)
+
+
+def test_report_path(run_id: str, case_id: str) -> Path:
+    with TEST_RUNS_LOCK:
+        run = TEST_RUNS.get(run_id)
+        if run is None:
+            raise RuntimeError("Test run was not found.")
+        serialize_test_run(run)
+        process_info = next(
+            (
+                item
+                for item in run["processes"]
+                if item["testCase"] == case_id
+            ),
+            None,
+        )
+        report_path = (
+            process_info.get("_reportPath") if process_info is not None else None
+        )
+    if report_path is None or not report_path.is_file():
+        raise RuntimeError("Test report was not found.")
+    return report_path
+
+
+def open_test_report(run_id: str, case_id: str) -> str:
+    report_path = test_report_path(run_id, case_id)
+    report_uri = report_path.as_uri()
+    if os.name == "nt":
+        os.startfile(str(report_path))
+    elif not webbrowser.open(report_uri):
+        raise RuntimeError("Unable to open the test report in a browser.")
+    return report_uri
+
+
+
+class AppRequestHandler(SimpleHTTPRequestHandler):
+    network_zone = "blue"
+
+    def do_GET(self) -> None:
+        request_path = urlparse(self.path).path
+        report_match = re.fullmatch(r"/api/test-runs/([^/]+)/reports/([^/]+)/content", request_path)
+        if report_match:
+            try:
+                report_path = test_report_path(*(unquote(value) for value in report_match.groups()))
+                if report_path.stat().st_size > 8 * 1024 * 1024:
+                    raise RuntimeError("Report exceeds the 8 MiB remote viewing limit.")
+                content = report_path.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(content)))
+                self.send_header("Content-Security-Policy", "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'")
+                self.end_headers()
+                self.wfile.write(content)
+            except (RuntimeError, OSError) as error:
+                send_json(self, 404, {"error": str(error)})
+            return
+        if request_path == "/api/devices":
+            send_json(self, 200, discover_hdc_devices())
+            return
+
+        if request_path == "/api/test-cases":
+            try:
+                result = discover_test_cases()
+                status = 200
+            except RuntimeError as error:
+                result = {"testCases": [], "error": str(error)}
+                status = 500
+            send_json(self, status, result)
+            return
+
+        if request_path == "/api/test-runs":
+            send_json(self, 200, list_test_runs())
+            return
+
+        if request_path == "/api/settings":
+            try:
+                settings = read_settings()
+                result = {
+                    "settings": settings,
+                    "testCaseUpdateCommand": test_case_update_command(settings),
+                    "networkZone": self.network_zone,
+                }
+                status = 200
+            except RuntimeError as error:
+                result = {"error": str(error)}
+                status = 500
+            send_json(self, status, result)
+            return
+
+        if request_path == "/api/model-config":
+            try:
+                result = {"modelConfig": read_model_config()}
+                status = 200
+            except RuntimeError as error:
+                result = {"error": str(error)}
+                status = 500
+            send_json(self, status, result)
+            return
+
+        super().do_GET()
+
+    def do_POST(self) -> None:
+        request_path = urlparse(self.path).path
+        close_match = re.fullmatch(
+            r"/api/test-runs/([^/]+)/close",
+            request_path,
+        )
+        if close_match:
+            try:
+                result = close_test_run(unquote(close_match.group(1)))
+                status = 200
+            except (RuntimeError, OSError) as error:
+                result = {"error": str(error)}
+                status = 404
+            send_json(self, status, result)
+            return
+
+        report_match = re.fullmatch(
+            r"/api/test-runs/([^/]+)/reports/([^/]+)/open",
+            request_path,
+        )
+        if report_match:
+            try:
+                report_uri = open_test_report(*report_match.groups())
+                result = {"reportUrl": report_uri}
+                status = 200
+            except (RuntimeError, OSError) as error:
+                result = {"error": str(error)}
+                status = 404
+            send_json(self, status, result)
+            return
+
+        if request_path != "/api/test-runs":
+            self.send_error(404)
+            return
+
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+            raw_body = self.rfile.read(content_length)
+            request_body = json.loads(raw_body.decode("utf-8") or "{}")
+            if not isinstance(request_body, dict):
+                raise RuntimeError("Test run request must contain a JSON object.")
+            result = start_test_cases(request_body)
+            status = 202
+        except (json.JSONDecodeError, RuntimeError, OSError) as error:
+            result = {"error": str(error)}
+            status = 400
+        send_json(self, status, result)
+
+    def do_PUT(self) -> None:
+        request_path = urlparse(self.path).path
+        if request_path not in {"/api/settings", "/api/model-config"}:
+            self.send_error(404)
+            return
+
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+            raw_body = self.rfile.read(content_length)
+            request_body = json.loads(raw_body.decode("utf-8") or "{}")
+            if not isinstance(request_body, dict):
+                raise RuntimeError("Settings request must contain a JSON object.")
+            if request_path == "/api/model-config":
+                incoming_config = request_body.get("modelConfig", request_body)
+                if not isinstance(incoming_config, dict):
+                    raise RuntimeError("modelConfig must contain a JSON object.")
+                model_config = write_model_config(incoming_config)
+            else:
+                incoming_settings = request_body.get("settings", request_body)
+                if not isinstance(incoming_settings, dict):
+                    raise RuntimeError("settings must contain a JSON object.")
+                settings = normalize_settings(incoming_settings)
+                write_settings(settings)
+            status = 200
+        except (json.JSONDecodeError, RuntimeError, OSError) as error:
+            result = {"error": str(error)}
+            status = 400
+        else:
+            result = (
+                {"modelConfig": model_config}
+                if request_path == "/api/model-config"
+                else {
+                    "settings": settings,
+                    "testCaseUpdateCommand": test_case_update_command(settings),
+                }
+            )
+        send_json(self, status, result)
+
+    def translate_path(self, path: str) -> str:
+        request_path = unquote(urlparse(path).path)
+        parts = Path(request_path.lstrip("/")).parts
+
+        if len(parts) >= 3 and parts[0] == "vendor" and parts[1] in VENDOR_PACKAGES:
+            vendor_path = VENDOR_DIRECTORY.joinpath(*parts[1:]).resolve()
+            package_root = (VENDOR_DIRECTORY / parts[1]).resolve()
+
+            try:
+                vendor_path.relative_to(package_root)
+            except ValueError:
+                return str(APP_DIRECTORY / "__not_found__")
+
+            return str(vendor_path)
+
+        return super().translate_path(path)
+
+
+class AppServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+
+
+def port_is_available() -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        return probe.connect_ex((HOST, PORT)) != 0
+
+
+def ensure_required_port_available() -> None:
+    if not port_is_available():
+        raise RuntimeError(f"port {PORT} is already in use")
+
+
+def create_server(handler) -> AppServer:
+    return AppServer((HOST, PORT), handler)
+
+
+def write_pid_file() -> None:
+    PID_PATH.write_text(f"{os.getpid()}\n", encoding="utf-8")
+
+
+def remove_pid_file() -> None:
+    try:
+        if PID_PATH.read_text(encoding="utf-8").strip() == str(os.getpid()):
+            PID_PATH.unlink()
+    except FileNotFoundError:
+        return
+    except OSError:
+        return
+
+
+def main() -> None:
+    missing_packages = [
+        package for package in VENDOR_PACKAGES if not (VENDOR_DIRECTORY / package).is_dir()
+    ]
+    if missing_packages:
+        packages = ", ".join(sorted(missing_packages))
+        print(
+            f"Unable to start the app: missing local vendor packages: {packages}.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    handler = partial(AppRequestHandler, directory=str(APP_DIRECTORY))
+
+    try:
+        ensure_required_port_available()
+    except (OSError, RuntimeError) as error:
+        print(
+            f"Unable to start the app: {error}. Stop the existing process and try again.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    network_zone = detect_network_zone()
+    AppRequestHandler.network_zone = network_zone
+    print(f"Network zone: {network_zone}")
+
+    try:
+        server = create_server(handler)
+    except OSError as error:
+        print(
+            f"Unable to start the app: port {PORT} is unavailable ({error}).",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    print(f"Serving the app at http://localhost:{PORT}")
+    print("Press Ctrl+C to stop.")
+    write_pid_file()
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopping the app.")
+    finally:
+        server.server_close()
+        remove_pid_file()
+
+
+if __name__ == "__main__":
+    main()

@@ -8,9 +8,3 @@ __pycache__/
 app/logs/test-runs/
 app/.idata.pid
 Testcases/
-bin/
-**/__pycache__/
-**/.DS_Store
-**/.idata.pid
-**/logs/
-**/idata-client.json
