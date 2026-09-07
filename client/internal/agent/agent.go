@@ -22,7 +22,7 @@ import (
 	"idata-client/internal/terminal"
 )
 
-const Version = "0.7.3"
+const Version = "0.7.4"
 
 var ErrAuthenticationRejected = errors.New("agent authentication rejected")
 
@@ -104,7 +104,7 @@ func (a *Agent) Run(ctx context.Context) error {
 func (a *Agent) connectAndServe(parent context.Context) error {
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+a.config.AgentToken)
-	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
+	dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
 	conn, response, err := dialer.DialContext(parent, a.config.ServerURL, header)
 	if err != nil {
 		if response != nil {

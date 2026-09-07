@@ -43,7 +43,7 @@ func Request(ctx context.Context, serverURL string, identity Identity, pending f
 	if err != nil {
 		return "", err
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 5 * time.Second}
 	body, err := json.Marshal(identity)
 	if err != nil {
 		return "", err

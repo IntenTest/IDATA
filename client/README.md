@@ -20,7 +20,7 @@ GOOS=windows GOARCH=amd64 go build -ldflags="-H=windowsgui" \
 
 程序会自动读取与可执行文件位于同一目录的 `idata-client.json`。这适合 Windows 双击
 启动场景；命令行参数优先于环境变量，环境变量优先于配置文件。未配置时默认连接
-`ws://10.90.65.189:12345/ws/agent`。示例见
+`ws://43.156.108.175/ws/agent`。示例见
 `deploy/idata-client.json.example`。
 
 macOS 和 Linux 使用前台命令行模式，也会自动连接默认 Server；需要覆盖地址时可显式提供
@@ -37,7 +37,7 @@ IDATA_SERVER_URL='ws://127.0.0.1:12345/ws/agent' ./idata-client
 
 | 环境变量 | 必填 | 默认值 | 说明 |
 |---|---:|---|---|
-| `IDATA_SERVER_URL` | 否 | `ws://10.90.65.189:12345/ws/agent` | Client 启动后自动连接的管理 Server；成功连接后自动记住 |
+| `IDATA_SERVER_URL` | 否 | `ws://43.156.108.175/ws/agent` | Client 启动后自动连接的管理 Server；成功连接后自动记住 |
 | `IDATA_AGENT_TOKEN` | 否 | 无 | 仅用于旧版共享凭据兼容；新设备默认使用自动申请 |
 | `IDATA_CLIENT_ID` | 否 | 当前 hostname | 稳定且唯一的设备 ID |
 | `IDATA_DEVICE_TOKEN` | 否 | 自动生成 | 每台设备唯一的 Web 配对凭据，至少 32 字符 |
@@ -56,7 +56,7 @@ $env:IDATA_CLIENT_ID = 'office-windows'
 ```
 
 双击 EXE 后会显示由 EXE 内部直接创建的原生 Windows 状态窗口，不依赖 PowerShell UI
-子进程。Server 地址默认填入 `10.90.65.189`，也可以在连接页修改；Client 启动后会立即按
+子进程。Server 地址默认填入 `43.156.108.175`，也可以在连接页修改；Client 启动后会立即按
 当前地址自动连接，无需点击按钮。要改用其他 Server，可先取消或中断连接，再编辑地址并重新
 连接。窗口同时显示当前用户名、机器名、主要局域网 IPv4
 和对应网卡 MAC 地址；真正建立连接后，窗口切换到状态页，可“中断连接”返回连接页，或“最小化到

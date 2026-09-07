@@ -34,7 +34,7 @@ const (
 	defaultBrowserBridgeAddress = "127.0.0.1:17891"
 	specialServerIP             = "10.90.65.189"
 	specialServerPort           = "12345"
-	defaultServerURL            = "ws://10.90.65.189:12345/ws/agent"
+	defaultServerURL            = "ws://43.156.108.175/ws/agent"
 )
 
 func main() {

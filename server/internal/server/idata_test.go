@@ -17,7 +17,6 @@ func TestIDATAAuthorizationAndAssets(t *testing.T) {
 		path, origin string
 		status       int
 	}{
-		{"/", "", 200}, {"/app.js", "", 200},
 		{"/idata/", "", 200}, {"/idata/vendor/vue-3.5.24/vue.global.prod.js", "", 200},
 		{"/connect/", "", 200}, {"/console/app.js", "", 200},
 		{"/api/v1/clients/pc/idata/settings", "", 403},

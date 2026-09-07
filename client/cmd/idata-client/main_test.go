@@ -115,11 +115,11 @@ func TestDefaultAgentToken(t *testing.T) {
 }
 
 func TestDefaultServerURL(t *testing.T) {
-	if defaultServerURL != "ws://10.90.65.189:12345/ws/agent" {
+	if defaultServerURL != "ws://43.156.108.175/ws/agent" {
 		t.Fatalf("default server URL = %q", defaultServerURL)
 	}
 	host, port := serverEndpoint(defaultServerURL)
-	if host != specialServerIP || port != specialServerPort {
+	if host != "43.156.108.175" || port != "80" {
 		t.Fatalf("default server endpoint = %s:%s", host, port)
 	}
 }

@@ -456,6 +456,9 @@
         if (response.ok && result.status === "approved") {
           elements.loginStatus.textContent = `免密登录成功，发现 ${result.client_count || 0} 台同 IP 设备。`;
           if (!await refreshClients(false)) throw new Error("登录会话未能生效，请重试");
+          const client = state.clients.find((item) => item.id === state.selfID) || state.clients[0];
+          if (!client) throw new Error("Client 已连接，但没有可用的执行设备");
+          location.assign(`/idata/?client=${encodeURIComponent(client.id)}`);
           return;
         }
         if (response.status !== 202 || result.status !== "waiting") {
@@ -687,6 +690,11 @@
 
   async function initializeDeviceMode() {
     state.authMode = "";
-    if (!await refreshClients(false)) showLoginGate();
+    if (!await refreshClients(false)) {
+      showLoginGate();
+      return;
+    }
+    const client = state.clients.find((item) => item.id === state.selfID) || state.clients[0];
+    if (client) location.assign(`/idata/?client=${encodeURIComponent(client.id)}`);
   }
 })();

@@ -146,6 +146,7 @@ func (s *Server) Handler() http.Handler {
 		}
 		serveWebIndex(fileServer, w, r)
 	})
+	mux.Handle("GET /", fileServer)
 	return securityHeaders(mux)
 }
 

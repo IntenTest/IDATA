@@ -22,11 +22,6 @@ func (s *Server) registerIDATA(mux *http.ServeMux) {
 	}
 	rootFiles := http.FileServer(http.FS(assets))
 	files := http.StripPrefix("/idata/", rootFiles)
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		// The existing Vue browser build compiles its templates at runtime.
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; frame-src blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
-		rootFiles.ServeHTTP(w, r)
-	})
 	mux.HandleFunc("GET /idata/", func(w http.ResponseWriter, r *http.Request) {
 		// The existing Vue browser build compiles its templates at runtime.
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; frame-src blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")

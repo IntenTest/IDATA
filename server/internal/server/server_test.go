@@ -157,7 +157,7 @@ func TestTerminalAuthorizationScopesDeviceTokenToItsClient(t *testing.T) {
 
 func TestWebConsoleIsEmbedded(t *testing.T) {
 	app := newTestServer(t)
-	request := httptest.NewRequest(http.MethodGet, "/connect/", nil)
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	response := httptest.NewRecorder()
 	app.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
