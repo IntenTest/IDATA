@@ -203,7 +203,7 @@
       const link = document.createElement("a");
       link.id = "open-idata";
       link.textContent = "Open IDATA test workspace";
-      link.href = `/idata/?client=${encodeURIComponent(arguments[0])}${state.adminMode ? "&mode=admin" : ""}`;
+      link.href = `/?client=${encodeURIComponent(arguments[0])}${state.adminMode ? "&mode=admin" : ""}`;
       elements.terminalClient.parentElement.appendChild(link);
     }
 

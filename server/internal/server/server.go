@@ -124,6 +124,18 @@ func (s *Server) Handler() http.Handler {
 		panic(fmt.Sprintf("load embedded web console: %v", err))
 	}
 	fileServer := http.FileServer(http.FS(webRoot))
+	consoleAssets := http.StripPrefix("/console/", fileServer)
+	mux.Handle("GET /console/", consoleAssets)
+	mux.HandleFunc("GET /connect", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/connect/", http.StatusTemporaryRedirect)
+	})
+	mux.HandleFunc("GET /connect/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/connect/" {
+			http.NotFound(w, r)
+			return
+		}
+		serveWebIndex(fileServer, w, r)
+	})
 	mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) {
 		serveWebIndex(fileServer, w, r)
 	})
@@ -134,7 +146,6 @@ func (s *Server) Handler() http.Handler {
 		}
 		serveWebIndex(fileServer, w, r)
 	})
-	mux.Handle("GET /", fileServer)
 	return securityHeaders(mux)
 }
 
