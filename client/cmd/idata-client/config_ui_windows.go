@@ -314,6 +314,9 @@ func (ui *clientUI) showLogin() {
 	ui.connecting = false
 	ui.connectedPanel.SetVisible(false)
 	ui.loginPanel.SetVisible(true)
+	if ui.notifyIcon != nil {
+		_ = ui.notifyIcon.SetToolTip("iData Client")
+	}
 	ui.setConfigurationEnabled(true)
 	_ = ui.connectButton.SetText("建立连接")
 	ui.loginStatus.SetTextColor(walk.RGB(178, 48, 48))
@@ -326,8 +329,12 @@ func (ui *clientUI) showConnected(update clientUIUpdate) {
 	ui.connecting = false
 	ui.loginPanel.SetVisible(false)
 	ui.connectedPanel.SetVisible(true)
+	endpoint := net.JoinHostPort(update.ServerIP, update.ServerPort)
 	_ = ui.connectedAddress.SetText("服务器地址：" + update.ServerIP)
 	_ = ui.connectedPort.SetText("连接端口：" + update.ServerPort)
+	if ui.notifyIcon != nil {
+		_ = ui.notifyIcon.SetToolTip("iData Client - " + endpoint)
+	}
 	ui.connectedStatus.SetTextColor(walk.RGB(34, 145, 88))
 	_ = ui.connectedStatus.SetText("连接正常，客户端保持在线")
 	ui.mainWindow.RequestLayout()
