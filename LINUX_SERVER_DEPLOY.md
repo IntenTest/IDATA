@@ -1,17 +1,41 @@
 # Fast Linux Server Deployment
 
-The fastest installation method is to download the prebuilt server binary from the latest IDATA release. This procedure does not require the Go compiler or a source build.
+The fastest installation method is to download the required files on a Windows computer, transfer them to the intranet Linux server, and install them locally. The Linux server does not need internet access, the Go compiler, or a source build.
 
 Current release: [IDATA Remote v0.2.5](https://github.com/IntenTest/IDATA/releases/tag/v0.2.5)
 
 These instructions are for Ubuntu or Debian on an `x86_64` system.
 
-## 1. Download and verify
+## 1. Download on Windows and transfer to Linux
+
+On a Windows computer with internet access, download these two files:
+
+1. [idata-server-linux-amd64](https://github.com/IntenTest/IDATA/releases/download/v0.2.5/idata-server-linux-amd64)
+2. [idata-server.service](https://raw.githubusercontent.com/IntenTest/IDATA/v0.2.5/server/deploy/idata-server.service)
+
+Keep the filenames exactly as shown. Copy both files to the same folder on the Linux server using an approved method such as a USB drive, an internal file share, WinSCP, or `scp`. The following commands assume the files were copied to `/tmp/idata-install`:
+
+```text
+/tmp/idata-install/idata-server-linux-amd64
+/tmp/idata-install/idata-server.service
+```
+
+On Windows, you can verify the server binary in PowerShell before transferring it:
+
+```powershell
+Get-FileHash .\idata-server-linux-amd64 -Algorithm SHA256
+```
+
+The expected SHA-256 value is:
+
+```text
+d03b860fa8cfd54d950a771ef18dacd0da4190b352ea22b68dc0878b6f603a17
+```
+
+After transferring the files, verify the binary again on Linux:
 
 ```bash
-cd /tmp
-
-wget https://github.com/IntenTest/IDATA/releases/download/v0.2.5/idata-server-linux-amd64
+cd /tmp/idata-install
 
 echo "d03b860fa8cfd54d950a771ef18dacd0da4190b352ea22b68dc0878b6f603a17  idata-server-linux-amd64" \
   | sha256sum -c -
@@ -28,6 +52,8 @@ Do not install or execute the file if its checksum does not match.
 ## 2. Install the binary and service account
 
 ```bash
+cd /tmp/idata-install
+
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin idata 2>/dev/null || true
 
 sudo install -d -m 0755 /opt/idata
@@ -68,8 +94,8 @@ Automatic enrollment is convenient for a trusted internal network. Set `IDATA_EN
 ## 4. Install and start the systemd service
 
 ```bash
-sudo wget -qO /etc/systemd/system/idata-server.service \
-  https://raw.githubusercontent.com/IntenTest/IDATA/v0.2.5/server/deploy/idata-server.service
+cd /tmp/idata-install
+sudo install -m 0644 idata-server.service /etc/systemd/system/idata-server.service
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now idata-server
@@ -113,4 +139,3 @@ Replace `192.168.1.0/24` with the actual trusted subnet.
 
 > [!WARNING]
 > IDATA v0.2.5 uses unencrypted HTTP and WebSocket connections. Do not expose TCP port 80 directly to the public internet. For public access, use an HTTPS reverse proxy and appropriate access restrictions.
-
