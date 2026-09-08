@@ -2,7 +2,7 @@
 
 The fastest installation method is to download the required files on a Windows computer, transfer them to the intranet Linux server, and install them locally. The Linux server does not need internet access, the Go compiler, or a source build.
 
-Current release: [IDATA Remote v0.2.6](https://github.com/IntenTest/IDATA/releases/tag/v0.2.6)
+Current production release: [IDATA Remote v0.2.6](https://github.com/IntenTest/IDATA/releases/tag/v0.2.6). The commands and checksum below are pinned to this release.
 
 These instructions are for Ubuntu or Debian on an `x86_64` system.
 
@@ -126,7 +126,41 @@ To follow the server logs:
 sudo journalctl -u idata-server -f
 ```
 
-## 6. Restrict network access
+## 6. Connect the production Windows Client
+
+Download `idata-client-windows-amd64.exe` from the same [v0.2.6 release](https://github.com/IntenTest/IDATA/releases/tag/v0.2.6) on the Windows PC.
+
+The production Client does not need a Server port configured in advance:
+
+1. Start `idata-client-windows-amd64.exe`.
+2. Open `http://SERVER_IP/` in the Windows browser.
+3. Click **Open IDATA Client**.
+4. The website launches `idata://connect` with the Server IP, port, and security mode.
+5. The running Client connects and displays the exact Server address and port it received.
+
+With the configuration in this guide, the website is on TCP port `80`. Ports `54321` and `17891` are Client-side loopback ports and must not be opened on the Linux Server.
+
+## 7. Upgrade an existing Linux installation
+
+Download the new `idata-server-linux-amd64` on Windows, verify its SHA-256 value, and transfer it to `/tmp/idata-install` as described above. Then run:
+
+```bash
+cd /tmp/idata-install
+
+echo "02bdf8d762487e4c639d6d8cc9077230951d1e6d66bb8d89e5a7b8141868e4bc  idata-server-linux-amd64" \
+  | sha256sum -c -
+
+sudo systemctl stop idata-server
+sudo install -m 0755 idata-server-linux-amd64 /opt/idata/idata-server
+sudo systemctl start idata-server
+
+curl --fail http://127.0.0.1/healthz
+sudo systemctl --no-pager status idata-server
+```
+
+The existing `/etc/idata/idata-server.env` configuration and `/var/lib/idata` device credentials are preserved.
+
+## 8. Restrict network access
 
 If UFW is enabled, allow access only from the trusted internal network. For example:
 
