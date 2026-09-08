@@ -2,6 +2,7 @@ package main
 
 import (
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -255,9 +256,9 @@ func TestServerPortForHost(t *testing.T) {
 	}{
 		{name: "special intranet server", host: "10.90.65.189", want: "12345"},
 		{name: "public server", host: "43.156.108.175", want: "80"},
-		{name: "public server replaces an old saved port", host: "43.156.108.175", previous: "ws://43.156.108.175:12345/ws/agent", want: "80"},
+		{name: "public server preserves supplied port", host: "43.156.108.175", previous: "ws://43.156.108.175:12345/ws/agent", want: "12345"},
 		{name: "other server", host: "10.90.65.190", want: "80"},
-		{name: "special server replaces an old saved port", host: "10.90.65.189", previous: "ws://10.90.65.189:80/ws/agent", want: "12345"},
+		{name: "special server preserves supplied port", host: "10.90.65.189", previous: "ws://10.90.65.189:80/ws/agent", want: "80"},
 		{name: "old special port does not follow another host", host: "10.90.65.190", previous: "ws://10.90.65.189:12345/ws/agent", want: "80"},
 		{name: "secure same host defaults to TLS port", host: "idata.example", previous: "wss://idata.example/ws/agent", want: "443"},
 	}
@@ -267,5 +268,35 @@ func TestServerPortForHost(t *testing.T) {
 				t.Fatalf("serverPortForHost(%q, %q) = %q, want %q", test.host, test.previous, got, test.want)
 			}
 		})
+	}
+}
+
+// Both startup and running-client handoff use this endpoint resolution chain.
+func TestLaunchEndpointSurvivesConnectionSetup(t *testing.T) {
+	for _, host := range []string{"10.90.65.189", "43.156.108.175", "192.168.8.87", "::1"} {
+		for _, endpoint := range []struct{ port, secure, scheme string }{
+			{"54321", "0", "ws"}, {"18080", "0", "ws"},
+			{"80", "0", "ws"}, {"443", "1", "wss"}, {"54443", "1", "wss"},
+		} {
+			t.Run(host+"/"+endpoint.port, func(t *testing.T) {
+				link := "idata://connect/?server=" + url.QueryEscape(host) + "&port=" + endpoint.port + "&secure=" + endpoint.secure
+				launchURL, err := serverURLFromLaunchLink(link)
+				if err != nil {
+					t.Fatal(err)
+				}
+				launchIP, _ := serverEndpoint(launchURL)
+				candidate, err := serverURLFromEndpoint(launchIP, serverPortForHost(launchIP, launchURL), launchURL)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if candidate != launchURL {
+					t.Fatalf("launch endpoint %q changed to %q", launchURL, candidate)
+				}
+				parsed, err := url.Parse(candidate)
+				if err != nil || parsed.Scheme != endpoint.scheme || parsed.Port() != endpoint.port || parsed.Hostname() != host {
+					t.Fatalf("incorrect connection endpoint %q", candidate)
+				}
+			})
+		}
 	}
 }

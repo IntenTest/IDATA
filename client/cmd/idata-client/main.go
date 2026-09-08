@@ -605,19 +605,17 @@ func serverEndpoint(raw string) (string, string) {
 
 func serverPortForHost(host, previousURL string) string {
 	host = strings.TrimSpace(strings.Trim(host, "[]"))
+	// A supplied endpoint (including a browser launch) takes precedence over
+	// legacy defaults. The URL scheme also defines the implicit 80/443 port.
+	if parsed, err := url.Parse(previousURL); err == nil && parsed.Hostname() == host && (parsed.Scheme == "ws" || parsed.Scheme == "wss") {
+		_, port := serverEndpoint(previousURL)
+		return port
+	}
 	if host == specialServerIP {
 		return specialServerPort
 	}
 	if host == publicServerIP {
 		return publicServerPort
-	}
-	if parsed, err := url.Parse(previousURL); err == nil && parsed.Hostname() == host {
-		if port := parsed.Port(); port != "" {
-			return port
-		}
-		if parsed.Scheme == "wss" {
-			return "443"
-		}
 	}
 	return "80"
 }

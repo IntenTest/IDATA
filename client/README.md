@@ -66,11 +66,19 @@ $env:IDATA_CLIENT_ID = 'office-windows'
 窗口支持拖动边框调整大小和最大化；界面会随可用空间自动重排，小尺寸窗口会在内容确实放不下时
 提供滚动条，并按当前显示器的 DPI 和工作区限制初始尺寸、计算居中位置，兼容常见低分辨率及高分屏缩放。
 
-默认 Server `10.90.65.189` 使用专用端口 `12345`。若通过配置或环境变量指定其他服务器 IP，
-仍默认使用端口 `80`。该专用映射会覆盖旧配置中为 `10.90.65.189` 保存的端口，升级后不需要
-手工清理此前保存的 `:80` 地址。
-公网 Server `43.156.108.175` 始终使用端口 `80`；即使旧配置为该地址保存了其他端口，
-Client 也会在连接时自动纠正为 `80`。
+Browser launch links take precedence over legacy IP-based port defaults. The client
+preserves the web page's IP address, port, and HTTP/HTTPS mode for both a fresh
+launch and a handoff to an already running client. For example, opening the link
+from `http://10.90.65.189:54321/` connects to
+`ws://10.90.65.189:54321/ws/agent`. Explicit configuration for the same host is
+also preserved; an omitted port follows the URL scheme (80 for WS, 443 for WSS).
+Only when no matching endpoint is available does manual host selection fall back
+to port 12345 for `10.90.65.189` or port 80 for other hosts.
+
+After updating the Windows executable, exit the old running client and run the new
+executable once to refresh the current user's `idata://` registration. Then launch
+it from the server web page. Server-only updates cannot fix an old client's port
+selection behavior.
 
 Client 默认直接进入设备申请流程。Server 开启自动批准时，会立即签发与 Client ID、Device
 Token 哈希绑定的专属凭据，Client 自动保存并连接；关闭时才等待管理员在 `/admin/` 控制台
