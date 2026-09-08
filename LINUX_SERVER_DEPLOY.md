@@ -2,7 +2,7 @@
 
 The fastest installation method is to download the required files on a Windows computer, transfer them to the intranet Linux server, and install them locally. The Linux server does not need internet access, the Go compiler, or a source build.
 
-Current production release: [IDATA Remote v0.2.7](https://github.com/IntenTest/IDATA/releases/tag/v0.2.7). The commands and checksum manifest below are pinned to this release.
+Current production release: [IDATA Remote v0.2.8](https://github.com/IntenTest/IDATA/releases/tag/v0.2.8). The commands and checksum manifest below are pinned to this release.
 
 These instructions are for Ubuntu or Debian on an `x86_64` system.
 
@@ -10,9 +10,9 @@ These instructions are for Ubuntu or Debian on an `x86_64` system.
 
 On a Windows computer with internet access, download these three files:
 
-1. [idata-server-linux-amd64](https://github.com/IntenTest/IDATA/releases/download/v0.2.7/idata-server-linux-amd64)
-2. [idata-server.service](https://raw.githubusercontent.com/IntenTest/IDATA/v0.2.7/server/deploy/idata-server.service)
-3. [SHA256SUMS](https://github.com/IntenTest/IDATA/releases/download/v0.2.7/SHA256SUMS)
+1. [idata-server-linux-amd64](https://github.com/IntenTest/IDATA/releases/download/v0.2.8/idata-server-linux-amd64)
+2. [idata-server.service](https://raw.githubusercontent.com/IntenTest/IDATA/v0.2.8/server/deploy/idata-server.service)
+3. [SHA256SUMS](https://github.com/IntenTest/IDATA/releases/download/v0.2.8/SHA256SUMS)
 
 Keep the filenames exactly as shown. Copy all three files to the same folder on the Linux server using an approved method such as a USB drive, an internal file share, WinSCP, or `scp`. The following commands assume the files were copied to `/tmp/idata-install`:
 
@@ -125,7 +125,9 @@ sudo journalctl -u idata-server -f
 
 ## 6. Connect the production Windows Client
 
-Download `idata-client-windows-amd64.exe` from the same [v0.2.7 release](https://github.com/IntenTest/IDATA/releases/tag/v0.2.7) on the Windows PC.
+Download `idata-client-windows-amd64.exe` from the same [v0.2.8 release](https://github.com/IntenTest/IDATA/releases/tag/v0.2.8) on the Windows PC.
+
+The production Client includes its local execution worker and private Python runtime. No source checkout or separate Python installation is needed for the worker. Existing HDC, test scripts, and test dependencies are still required for the operations that use them. Only the Windows Client needs updating for this fix.
 
 The production Client does not need a Server port configured in advance:
 
@@ -168,4 +170,4 @@ sudo ufw status
 Replace `192.168.1.0/24` with the actual trusted subnet.
 
 > [!WARNING]
-> IDATA v0.2.7 uses unencrypted HTTP and WebSocket connections. Do not expose TCP port 80 directly to the public internet. For public access, use an HTTPS reverse proxy and appropriate access restrictions.
+> IDATA v0.2.8 uses unencrypted HTTP and WebSocket connections. Do not expose TCP port 80 directly to the public internet. For public access, use an HTTPS reverse proxy and appropriate access restrictions.

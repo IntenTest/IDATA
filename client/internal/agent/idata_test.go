@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"idata-client/internal/protocol"
 	"net"
 	"net/http"
@@ -40,5 +41,18 @@ func TestIDATALoopbackRoundTrip(t *testing.T) {
 	response := forwardIDATA(context.Background(), protocol.Message{RequestID: "roundtrip", Method: "POST", Path: "/api/test-runs", Data: []byte(`{}`)})
 	if response.Status != 202 || !strings.Contains(string(response.Data), "local-run") || response.RequestID != "roundtrip" {
 		t.Fatalf("unexpected result: %+v", response)
+	}
+}
+
+func TestIDATAReadinessFailurePreventsForwarding(t *testing.T) {
+	calls := 0
+	ensure := func(context.Context) error { calls++; return errors.New("worker failed") }
+	invalid := forwardIDATAWithService(context.Background(), protocol.Message{RequestID: "invalid", Method: "GET", Path: "/api/unknown"}, ensure)
+	if invalid.Status != 400 || calls != 0 {
+		t.Fatal("invalid operation triggered worker startup")
+	}
+	result := forwardIDATAWithService(context.Background(), protocol.Message{RequestID: "blocked", Method: "POST", Path: "/api/test-runs", Data: []byte(`{}`)}, ensure)
+	if result.Status != 503 || calls != 1 || result.RequestID != "blocked" {
+		t.Fatalf("unexpected result: %+v, calls=%d", result, calls)
 	}
 }

@@ -8,9 +8,7 @@ Windows 桌面端及 macOS/Linux 命令行 agent。它通过可见窗口或前�
 在任意 Go 开发机交叉编译无控制台窗口的 Windows EXE：
 
 ```bash
-mkdir -p bin
-GOOS=windows GOARCH=amd64 go build -ldflags="-H=windowsgui" \
-  -o bin/idata-client-windows-amd64.exe ./cmd/idata-client
+python3 deploy/build_windows.py --output bin/idata-client-windows-amd64.exe
 ```
 
 仓库已包含 Windows AMD64 资源对象，构建时会自动嵌入 Common Controls v6、DPI 和
@@ -47,7 +45,7 @@ IDATA_SERVER_URL='ws://127.0.0.1:12345/ws/agent' ./idata-client
 | `IDATA_CONFIRM_BROWSER_PAIRING` | 否 | `false` | 是否兼容 v0.4 的 Windows 本机确认请求 |
 | `IDATA_REGISTER_URL_PROTOCOL` | 否 | `true` | 当前 Windows 用户注册 `idata://` 免密登录唤起协议 |
 | `IDATA_EXECUTION_SCRIPT` | 否 | 自动查找 | 本机 IDATA 执行端 `start.py` 路径；Client 会自动在后台启动并管理它 |
-| `IDATA_PYTHON_EXECUTABLE` | 否 | `python` | 用于启动本机 IDATA 执行端的 Python 解释器 |
+| `IDATA_PYTHON_EXECUTABLE` | 否 | bundled runtime on Windows | 用于启动本机 IDATA 执行端的 Python 解释器 |
 
 管理员也可以通过 Windows PowerShell 预置隐藏配置：
 
@@ -133,10 +131,30 @@ idata-client.json
 客户端意外断线后会在状态页显示提示并按指数退避自动重连；用户主动中断连接时不会重连。
 客户端以当前 Windows 账户的权限执行命令，请遵循最小权限原则。
 
-启动时 Client 会检查 `127.0.0.1:54321`。若执行服务尚未运行，Client 会从配置路径，或
-EXE/当前目录附近的 `idata/app/start.py` 自动定位并在隐藏后台启动它；退出 Client 时会停止
-由本次 Client 启动的执行服务。发布目录与源码目录分离时，应在 `idata-client.json` 中设置
-`execution_script`，Windows 用户仍只需启动 EXE。
+The official Windows release is a single executable containing the IDATA execution
+worker, its local assets, and the official Python 3.12.10 embeddable runtime. It
+requires no separate source checkout or system Python to start the local service.
+On first connection, the client prepares these files under
+`%LOCALAPPDATA%\IDATA\execution-service`, starts the worker on `127.0.0.1:54321`,
+and waits for a successful settings response before connecting to the server.
+Worker settings and logs remain in this directory across executable upgrades.
+
+The worker runs in the background while the client remains available in its normal
+window or tray. A new web operation checks readiness and can restart a stopped
+worker before forwarding the operation. Failed test-start requests are never
+replayed automatically; verify test status before retrying. Closing the client
+stops the worker it started, but does not stop a separately started worker.
+
+An explicit `execution_script` or `python_executable` remains supported for custom
+installations. An old saved `python` default migrates to the bundled runtime.
+A different service occupying local port 54321 produces a visible startup error;
+the client does not change ports or terminate that unrelated service.
+
+This runtime provides the web-to-PC execution service under the current Windows
+user's permissions. HDC, device drivers, test scripts, and their Python packages
+are supplied by the existing test environment. Configure absolute PC paths in the
+web Settings page. The bundled worker Python does not replace the test interpreter.
+No administrator elevation is requested or bypassed.
 
 ## 错误日志
 
@@ -163,3 +181,17 @@ EXE 同目录；如果该目录不可写，则保存在当前用户的本地应�
 - `idata-client.json` 中的 token 是明文凭据，应限制该文件仅授权管理员和运行账户可读，
   不要提交到版本库或通过不安全渠道传输。
 - 卸载只需停止托管服务、删除可执行文件和相应环境配置；本程序不会自行注册持久化。
+
+
+## Build the offline Windows release
+
+```sh
+python3 deploy/build_windows.py --output ../bin/idata-client-windows-amd64.exe
+```
+
+The build downloads the official Python embeddable ZIP and verifies its pinned
+SHA-256 value. For an offline build, pass `--python-archive PATH_TO_ZIP`. The
+script generates the ignored `internal/executionservice/runtime.zip` and enables
+the `idata_bundle` build tag. Plain `go build` is a development build that still
+requires an external worker and Python. The archive includes Python and vendor
+licenses but excludes credentials, settings, logs, and test data.

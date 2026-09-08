@@ -2,14 +2,17 @@ package executionservice
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -23,58 +26,111 @@ type Config struct {
 }
 
 func Ensure(ctx context.Context, config Config) (func(), error) {
-	if serviceAvailable() {
-		config.Logger.Info("local IDATA execution service already running")
+	return ensure(ctx, ctx, config)
+}
+
+func ensure(lifetime, startup context.Context, config Config) (func(), error) {
+	if config.Logger == nil {
+		config.Logger = slog.Default()
+	}
+	if err := startup.Err(); err != nil {
+		return func() {}, err
+	}
+	if serviceAvailable(startup) {
 		return func() {}, nil
 	}
-	script, err := locateScript(config.ScriptPath)
+	probe, err := net.DialTimeout("tcp", "127.0.0.1:54321", 300*time.Millisecond)
+	if err == nil {
+		probe.Close()
+		return func() {}, errors.New("local port 54321 is occupied by an unrecognized or unhealthy service; close that service and retry")
+	}
+	script, pythonName, err := resolveRuntime(config)
 	if err != nil {
 		return func() {}, err
 	}
-	python, err := exec.LookPath(config.PythonExecutable)
+	python, err := exec.LookPath(pythonName)
 	if err != nil {
-		return func() {}, fmt.Errorf("locate Python executable %q: %w", config.PythonExecutable, err)
+		return func() {}, fmt.Errorf("locate Python executable %q: %w", pythonName, err)
 	}
-	command := exec.Command(python, script)
+	command := exec.Command(python, "-u", script)
 	command.Dir = filepath.Dir(script)
-	command.Stdout = config.Output
-	command.Stderr = config.Output
+	command.Stdout, command.Stderr = config.Output, config.Output
 	configureHiddenProcess(command)
 	if err := command.Start(); err != nil {
 		return func() {}, fmt.Errorf("start IDATA execution service: %w", err)
 	}
-	exited := make(chan error, 1)
-	go func() { exited <- command.Wait() }()
+	exited := make(chan struct{})
+	var processErr error
+	go func() { processErr = command.Wait(); close(exited) }()
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			select {
+			case <-exited:
+				return
+			default:
+			}
+			_ = terminateProcess(command.Process)
+			select {
+			case <-exited:
+			case <-time.After(3 * time.Second):
+			}
+		})
+	}
 	config.Logger.Info("local IDATA execution service starting", "script", script, "pid", command.Process.Pid)
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		if serviceAvailable() {
+	readyCtx, cancel := context.WithTimeout(startup, 15*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if serviceAvailable(readyCtx) {
 			config.Logger.Info("local IDATA execution service ready", "pid", command.Process.Pid)
 			go func() {
-				<-ctx.Done()
-				_ = terminateProcess(command.Process)
+				select {
+				case <-lifetime.Done():
+					stop()
+				case <-exited:
+				}
 			}()
-			return func() { _ = terminateProcess(command.Process) }, nil
+			return stop, nil
 		}
 		select {
-		case processErr := <-exited:
-			return func() {}, fmt.Errorf("IDATA execution service exited before becoming ready: %w", processErr)
-		default:
+		case <-readyCtx.Done():
+			stop()
+			return func() {}, fmt.Errorf("IDATA execution service was not ready on 127.0.0.1:54321: %w", readyCtx.Err())
+		case <-lifetime.Done():
+			stop()
+			return func() {}, lifetime.Err()
+		case <-exited:
+			return func() {}, fmt.Errorf("IDATA execution service exited before becoming ready (%v); see the client log for details", processErr)
+		case <-ticker.C:
 		}
-		time.Sleep(250 * time.Millisecond)
 	}
-	_ = terminateProcess(command.Process)
-	return func() {}, errors.New("IDATA execution service did not become available on 127.0.0.1:54321")
 }
 
-func serviceAvailable() bool {
-	client := &http.Client{Timeout: time.Second, Transport: &http.Transport{Proxy: nil}}
-	response, err := client.Get(healthURL)
+func serviceAvailable(ctx context.Context) bool {
+	return checkService(ctx, healthURL)
+}
+
+func checkService(ctx context.Context, endpoint string) bool {
+	client := &http.Client{Timeout: time.Second, Transport: &http.Transport{Proxy: nil, DisableKeepAlives: true},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return false
 	}
-	_ = response.Body.Close()
-	return response.StatusCode >= 200 && response.StatusCode < 500
+	response, err := client.Do(request)
+	if err != nil {
+		return false
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return false
+	}
+	var payload struct {
+		Settings map[string]json.RawMessage `json:"settings"`
+	}
+	return json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&payload) == nil && payload.Settings != nil
 }
 
 func locateScript(configured string) (string, error) {

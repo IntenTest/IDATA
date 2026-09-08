@@ -54,10 +54,13 @@ Client credentials are saved beside its executable in `bin/idata-client.json`.
 Keep this file private; do not distribute an installation directory after pairing
 without excluding credentials and local logs/settings.
 
-The Windows client can manage the local execution service automatically. Set
-`execution_script` in `idata-client.json` to the execution PC's
-`idata/app/start.py`; launching the EXE then starts that service in the background,
-keeps the agent connected, and stops the managed service when the client exits.
+The official Windows Client EXE includes the execution worker and its private
+Python runtime. Start the EXE once, then use the website launch link. It prepares
+the local service automatically before connecting; a separate project checkout
+or system Python is not required for this service. Worker files and persistent
+settings live under `%LOCALAPPDATA%\IDATA\execution-service`. HDC, device drivers,
+and the actual test interpreter, dependencies, and scripts remain part of the PC's
+test environment. Use absolute paths in the web Settings page.
 
 ## Preserved functions and integration changes
 
@@ -95,7 +98,7 @@ go test ./...
 go vet ./...
 go build -o ../bin/idata-client-darwin-arm64 ./cmd/idata-client
 GOOS=darwin GOARCH=amd64 go build -o ../bin/idata-client-darwin-amd64 ./cmd/idata-client
-GOOS=windows GOARCH=amd64 go build -o ../bin/idata-client-windows-amd64.exe ./cmd/idata-client
+python3 deploy/build_windows.py --output ../bin/idata-client-windows-amd64.exe
 ```
 
 No new third-party dependencies were added. Both repositories contain the protocol

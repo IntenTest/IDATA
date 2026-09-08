@@ -22,22 +22,23 @@ import (
 	"idata-client/internal/terminal"
 )
 
-const Version = "0.7.10"
+const Version = "0.7.11"
 
 var ErrAuthenticationRejected = errors.New("agent authentication rejected")
 
 var pairingChallengePattern = regexp.MustCompile(`^PAIR IDATA [A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$`)
 
 type Config struct {
-	ServerURL       string
-	AgentToken      string
-	ClientID        string
-	Hostname        string
-	DeviceToken     string
-	OutputLimit     int64
-	PairingApprover func(context.Context, pairingprompt.Request) (bool, error)
-	ConnectionState func(bool)
-	Retrying        func(error, time.Duration)
+	ServerURL              string
+	AgentToken             string
+	ClientID               string
+	Hostname               string
+	DeviceToken            string
+	OutputLimit            int64
+	PairingApprover        func(context.Context, pairingprompt.Request) (bool, error)
+	ConnectionState        func(bool)
+	Retrying               func(error, time.Duration)
+	EnsureExecutionService func(context.Context) error
 }
 
 type Agent struct {
@@ -204,7 +205,7 @@ func (a *Agent) connectAndServe(parent context.Context) error {
 				go func(request protocol.Message) {
 					defer commands.Done()
 					defer func() { <-semaphore }()
-					result := forwardIDATA(ctx, request)
+					result := forwardIDATAWithService(ctx, request, a.config.EnsureExecutionService)
 					if ctx.Err() == nil {
 						_ = writeJSON(conn, &writeMu, result)
 					}
