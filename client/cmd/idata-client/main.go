@@ -312,6 +312,7 @@ func run(logger *slog.Logger, logFile *os.File) error {
 		activeURL = candidate
 		cancelConnection = cancel
 		activeConnectionContext = connectionCtx
+		_ = ui.update(clientUIUpdate{State: "connecting", ServerIP: activeIP, ServerPort: activePort})
 		if agentToken == "" {
 			startEnrollment(connectionCtx, currentGeneration, candidate)
 			return

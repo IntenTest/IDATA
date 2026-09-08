@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"runtime"
 	"strings"
@@ -46,6 +47,7 @@ type clientUI struct {
 	loginStatus      *walk.Label
 	connectButton    *walk.PushButton
 	connectedAddress *walk.Label
+	connectedPort    *walk.Label
 	connectedStatus  *walk.Label
 	notifyIcon       *walk.NotifyIcon
 	actions          chan clientUIAction
@@ -167,7 +169,8 @@ func (ui *clientUI) createWindow(initial clientUIInitial) error {
 						TextAlignment: AlignCenter, MinSize: Size{Height: 66}},
 					Label{Text: "已连接", Font: Font{Family: "Microsoft YaHei UI", PointSize: 13, Bold: true},
 						TextColor: dark, TextAlignment: AlignCenter, MinSize: Size{Height: 30}},
-					Label{AssignTo: &ui.connectedAddress, TextColor: muted, TextAlignment: AlignCenter, MinSize: Size{Height: 28}},
+					Label{AssignTo: &ui.connectedAddress, TextColor: muted, TextAlignment: AlignCenter, MinSize: Size{Height: 24}},
+					Label{AssignTo: &ui.connectedPort, TextColor: muted, TextAlignment: AlignCenter, MinSize: Size{Height: 24}},
 					Label{AssignTo: &ui.connectedStatus, Text: "连接正常，客户端保持在线", TextColor: walk.RGB(34, 145, 88),
 						TextAlignment: AlignCenter, MinSize: Size{Height: 38}},
 					VSpacer{Size: 14},
@@ -323,7 +326,8 @@ func (ui *clientUI) showConnected(update clientUIUpdate) {
 	ui.connecting = false
 	ui.loginPanel.SetVisible(false)
 	ui.connectedPanel.SetVisible(true)
-	_ = ui.connectedAddress.SetText(update.ServerIP + ":" + update.ServerPort)
+	_ = ui.connectedAddress.SetText("服务器地址：" + update.ServerIP)
+	_ = ui.connectedPort.SetText("连接端口：" + update.ServerPort)
 	ui.connectedStatus.SetTextColor(walk.RGB(34, 145, 88))
 	_ = ui.connectedStatus.SetText("连接正常，客户端保持在线")
 	ui.mainWindow.RequestLayout()
@@ -354,6 +358,9 @@ func (ui *clientUI) update(update clientUIUpdate) error {
 	}
 	ui.mainWindow.Synchronize(func() {
 		switch update.State {
+		case "connecting":
+			ui.loginStatus.SetTextColor(walk.RGB(90, 101, 120))
+			_ = ui.loginStatus.SetText("正在连接服务器 " + net.JoinHostPort(update.ServerIP, update.ServerPort) + "…")
 		case "connected":
 			ui.showConnected(update)
 		case "retrying":
