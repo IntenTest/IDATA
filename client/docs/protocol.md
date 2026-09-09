@@ -35,3 +35,9 @@ The server exposes these operations at
 an administrator bearer token or a device/IP browser session authorized for that PC.
 The established shared-NAT/IP access model remains unchanged. HTML reports are
 sandboxed and cannot run scripts against the control origin.
+
+Test case archives: POST /api/test-cases/update starts or rejoins a background update;
+GET /api/test-cases/update returns idle/running/complete/failed and a message.
+The worker downloads the saved testCaseArchiveUrl on the execution PC, validates
+UTF-8 archive paths and the mapping CSV, replaces ~/.idata/newest_testcases, and
+saves the new library path. Request deadlines remain unchanged.

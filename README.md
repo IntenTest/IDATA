@@ -104,3 +104,29 @@ python3 deploy/build_windows.py --output ../bin/idata-client-windows-amd64.exe
 No new third-party dependencies were added. Both repositories contain the protocol
 documentation in `docs/protocol.md`. The new tests cover authorization, request
 routing, disconnect cleanup, request limits, and local worker forwarding.
+
+## Download and update test cases
+
+In Settings, set **Test case archive URL** (saved automatically). The default is
+`http://10.90.65.189:54322/Testcases.tar.gz`. Select **Update test case library**
+on the Test Cases page. The selected execution PC downloads the archive using
+curl.exe on Windows or curl on macOS; Python extracts UTF-8 filenames without
+requiring a separate tar installation. No shell command is constructed from the URL.
+
+The worker stages and validates the archive, then replaces
+`%USERPROFILE%\.idata\newest_testcases` on Windows (`~/.idata/newest_testcases` on
+macOS). Missing directories are created. The previous managed directory is removed
+only after successful installation; failed downloads or validation retain it.
+Custom library directories are not deleted. The archive must contain one
+`中英文映射.csv` with the existing required columns and matching Python test files.
+Both a top-level Testcases directory and a flat archive are supported. Links and
+unsafe archive paths are rejected. Downloads time out after ten minutes, with a
+2 GiB download limit and 4 GiB extracted-file limit.
+
+The library path is saved automatically; an included `run_testcase.py` also updates
+the runner path. The page displays progress and reloads cases through the client.
+If the browser closes, the update continues on the PC; click Update again while
+it is running to resume watching. Client or worker shutdown interrupts the update.
+Deploy the updated server, client executable, and Python worker together.
+
+Regression check: `python3 -m unittest discover -s idata/app -p 'test_*.py'`.

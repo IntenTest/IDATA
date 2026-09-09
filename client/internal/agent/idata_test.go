@@ -56,3 +56,14 @@ func TestIDATAReadinessFailurePreventsForwarding(t *testing.T) {
 		t.Fatalf("unexpected result: %+v, calls=%d", result, calls)
 	}
 }
+
+func TestIDATAArchiveUpdateRoutes(t *testing.T) {
+	if !idataReadPath.MatchString("/api/test-cases/update") || !idataWritePath.MatchString("/api/test-cases/update") {
+		t.Fatal("archive update start and status routes must be forwarded")
+	}
+	for _, path := range []string{"/api/test-cases/update/extra", "/api/test-cases/update?url=http://example.com", "/api/test-cases/delete"} {
+		if idataReadPath.MatchString(path) || idataWritePath.MatchString(path) {
+			t.Fatalf("unexpected route allowed: %s", path)
+		}
+	}
+}

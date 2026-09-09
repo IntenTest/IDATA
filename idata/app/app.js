@@ -645,6 +645,7 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
   defaultEnvironment: "HarmonyOS",
   defaultOwner: "kouyanan 30030842",
   testCaseRepositoryUrl: "https://codehub-dg-y.huawei.com/k30030842/Testcases.git",
+  testCaseArchiveUrl: "http://10.90.65.189:54322/Testcases.tar.gz",
   testCaseLibraryPath: "../Phoebe-main/Testcases",
   pythonExecutablePath: "../python310/python.exe",
   runTestCasesPath: "../Phoebe-main/Testcases/run_testcase.py",
@@ -747,6 +748,8 @@ const App = {
     const settingsSaving = ref(false);
     const settingsError = ref("");
     const testCaseUpdateCommand = ref("");
+    const testCaseUpdating = ref(false);
+    const testCaseUpdateStatus = ref("");
     const settingsSavedAt = ref("");
     const modelConfig = reactive({ api_base: "", api_key: "", model_name: "" });
     const modelConfigLoading = ref(false);
@@ -1658,24 +1661,29 @@ const App = {
     }
 
     async function updateTestCaseLibrary() {
-      const command = testCaseUpdateCommand.value ||
-        `git -C "${appSettings.testCaseLibraryPath}" pull --ff-only`;
+      if (testCaseUpdating.value) return;
+      testCaseUpdating.value = true;
+      testCaseUpdateStatus.value = "Preparing test case update…";
       try {
-        await ElementPlus.ElMessageBox.confirm(
-          h("div", { class: "test-case-update-instructions" }, [
-            h("p", t("Open CMD or a terminal and run the following command. When it finishes, click Reload test cases.")),
-            h("pre", { class: "test-case-update-command" }, command),
-          ]),
-          t("Update the test case library manually"),
-          {
-            confirmButtonText: t("Reload test cases"),
-            cancelButtonText: t("Close"),
-            type: "info",
-          },
-        );
-        await loadTestCases();
-      } catch (_error) {
-        // The user closed the instructions without reloading the local package.
+        let response = await fetch("/api/test-cases/update", { method: "POST" });
+        for (;;) {
+          const result = await response.json();
+          if (!response.ok || result.status === "failed") {
+            throw new Error(result.error || result.message || "Unable to update test cases.");
+          }
+          testCaseUpdateStatus.value = result.message;
+          if (result.status === "complete") break;
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          response = await fetch("/api/test-cases/update", { cache: "no-store" });
+        }
+        newTestRun.selections = [];
+        await loadSettings();
+        ElementPlus.ElMessage.success("Test case library updated successfully.");
+      } catch (error) {
+        testCaseUpdateStatus.value = error.message || "Unable to update test cases.";
+        ElementPlus.ElMessage.error(testCaseUpdateStatus.value);
+      } finally {
+        testCaseUpdating.value = false;
       }
     }
 
@@ -2110,6 +2118,8 @@ const App = {
       loadSettings,
       loadTestCases,
       updateTestCaseLibrary,
+      testCaseUpdating,
+      testCaseUpdateStatus,
       mappingValidation,
       mappingValidationVisible,
       resetSettings,
@@ -2287,9 +2297,9 @@ const App = {
             type="primary"
             round
             :loading="testCasesLoading"
-            @click="updateTestCaseLibrary"
+            :loading="testCaseUpdating" @click="updateTestCaseLibrary"
           >
-            {{ t('Update test case library') }}
+            {{ testCaseUpdating ? testCaseUpdateStatus : t('Update test case library') }}
           </el-button>
           <el-button
             v-else-if="activeView === 'Test Suites'"
@@ -2927,8 +2937,8 @@ const App = {
               :closable="false"
             >
               <template #default>
-                <el-button size="small" plain @click="updateTestCaseLibrary">
-                  {{ t('Update test case library') }}
+                <el-button size="small" plain :loading="testCaseUpdating" @click="updateTestCaseLibrary">
+                  {{ testCaseUpdating ? testCaseUpdateStatus : t('Update test case library') }}
                 </el-button>
               </template>
             </el-alert>
@@ -3431,6 +3441,10 @@ const App = {
 
             <el-form class="settings-form" label-position="top">
               <div class="settings-grid">
+                <el-form-item label="Test case archive URL" class="settings-path-field">
+                  <el-input v-model="appSettings.testCaseArchiveUrl" placeholder="http://10.90.65.189:54322/Testcases.tar.gz" />
+                  <span class="settings-field-help">Changes are saved automatically. The execution PC downloads and replaces .idata/newest_testcases in your user folder, then reloads the test cases.</span>
+                </el-form-item>
                 <el-form-item :label="t('Project name')">
                   <el-input v-model="appSettings.projectName" />
                 </el-form-item>

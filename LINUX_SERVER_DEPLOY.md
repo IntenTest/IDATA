@@ -2,7 +2,7 @@
 
 The fastest installation method is to download the required files on a Windows computer, transfer them to the intranet Linux server, and install them locally. The Linux server does not need internet access, the Go compiler, or a source build.
 
-Current production release: [IDATA Remote v0.2.8](https://github.com/IntenTest/IDATA/releases/tag/v0.2.8). The commands and checksum manifest below are pinned to this release.
+Current production release: [IDATA Remote v0.2.9](https://github.com/IntenTest/IDATA/releases/tag/v0.2.9). The commands and checksum manifest below are pinned to this release.
 
 These instructions are for Ubuntu or Debian on an `x86_64` system.
 
@@ -10,9 +10,9 @@ These instructions are for Ubuntu or Debian on an `x86_64` system.
 
 On a Windows computer with internet access, download these three files:
 
-1. [idata-server-linux-amd64](https://github.com/IntenTest/IDATA/releases/download/v0.2.8/idata-server-linux-amd64)
-2. [idata-server.service](https://raw.githubusercontent.com/IntenTest/IDATA/v0.2.8/server/deploy/idata-server.service)
-3. [SHA256SUMS](https://github.com/IntenTest/IDATA/releases/download/v0.2.8/SHA256SUMS)
+1. [idata-server-linux-amd64](https://github.com/IntenTest/IDATA/releases/download/v0.2.9/idata-server-linux-amd64)
+2. [idata-server.service](https://raw.githubusercontent.com/IntenTest/IDATA/v0.2.9/server/deploy/idata-server.service)
+3. [SHA256SUMS](https://github.com/IntenTest/IDATA/releases/download/v0.2.9/SHA256SUMS)
 
 Keep the filenames exactly as shown. Copy all three files to the same folder on the Linux server using an approved method such as a USB drive, an internal file share, WinSCP, or `scp`. The following commands assume the files were copied to `/tmp/idata-install`:
 
@@ -125,9 +125,9 @@ sudo journalctl -u idata-server -f
 
 ## 6. Connect the production Windows Client
 
-Download `idata-client-windows-amd64.exe` from the same [v0.2.8 release](https://github.com/IntenTest/IDATA/releases/tag/v0.2.8) on the Windows PC.
+Download `idata-client-windows-amd64.exe` from the same [v0.2.9 release](https://github.com/IntenTest/IDATA/releases/tag/v0.2.9) on the Windows PC.
 
-The production Client includes its local execution worker and private Python runtime. No source checkout or separate Python installation is needed for the worker. Existing HDC, test scripts, and test dependencies are still required for the operations that use them. Only the Windows Client needs updating for this fix.
+The production Client includes its local execution worker and private Python runtime. No source checkout or separate Python installation is needed for the worker. Existing HDC, test scripts, and test dependencies are still required for the operations that use them. Update both the Linux Server and Windows Client for the test case archive feature.
 
 The production Client does not need a Server port configured in advance:
 
@@ -148,6 +148,7 @@ cd /tmp/idata-install
 
 sha256sum --check --ignore-missing SHA256SUMS
 
+sudo cp -p /opt/idata/idata-server /opt/idata/idata-server.previous
 sudo systemctl stop idata-server
 sudo install -m 0755 idata-server-linux-amd64 /opt/idata/idata-server
 sudo systemctl start idata-server
@@ -170,4 +171,43 @@ sudo ufw status
 Replace `192.168.1.0/24` with the actual trusted subnet.
 
 > [!WARNING]
-> IDATA v0.2.8 uses unencrypted HTTP and WebSocket connections. Do not expose TCP port 80 directly to the public internet. For public access, use an HTTPS reverse proxy and appropriate access restrictions.
+> IDATA v0.2.9 uses unencrypted HTTP and WebSocket connections. Do not expose TCP port 80 directly to the public internet. For public access, use an HTTPS reverse proxy and appropriate access restrictions.
+
+## 9. Update the test case library
+
+On each Windows execution PC, exit the old Client and replace its executable with
+`idata-client-windows-amd64.exe` from v0.2.9. Preserve `idata-client.json` beside it.
+Start the new executable once and then click **Open IDATA Client** on the website.
+The EXE includes the updated worker and its Python runtime.
+
+In website Settings, set **Test case archive URL** to
+`http://10.90.65.189:54322/Testcases.tar.gz` (the default), or another reachable
+HTTP/HTTPS archive URL. Settings save automatically. On Test Cases, click
+**Update test case library** and wait for completion. The Windows execution PC,
+not the Linux web server, must be able to reach the archive URL.
+
+The library is staged, validated, and installed in
+`%USERPROFILE%\.idata\newest_testcases`. A missing directory is created. The old
+managed library is replaced only after validation. The page reloads cases through
+the Client. Stop active test runs before updating. No testcase archive needs to be
+uploaded to the Linux web server. If you previously used `%USERPROFILE%\idata`,
+that older location is left untouched; successful updates switch Settings to the
+new hidden-directory location.
+
+The Python interpreter and HDC/test dependencies used by test execution remain
+separate from the bundled worker runtime; retain their existing configuration.
+
+## 10. Roll back an upgrade
+
+If the upgraded server fails, restore the saved executable:
+
+```bash
+sudo systemctl stop idata-server
+sudo cp -p /opt/idata/idata-server.previous /opt/idata/idata-server
+sudo systemctl start idata-server
+```
+
+Keep a copy of the previous Windows executable before replacement. Exit the new
+Client before restoring it. Existing credentials and settings should be retained.
+For a nonstandard installation, inspect `sudo systemctl cat idata-server` and use
+its actual ExecStart binary path instead of `/opt/idata/idata-server`.

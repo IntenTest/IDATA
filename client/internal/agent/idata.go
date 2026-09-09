@@ -11,8 +11,8 @@ import (
 	"idata-client/internal/protocol"
 )
 
-var idataReadPath = regexp.MustCompile(`^/api/(devices|settings|model-config|test-cases|test-runs|test-runs/[A-Za-z0-9._%-]+/reports/[A-Za-z0-9._%-]+/content)$`)
-var idataWritePath = regexp.MustCompile(`^/api/test-runs(/[A-Za-z0-9._%-]+/(close|reports/[A-Za-z0-9._%-]+/open))?$`)
+var idataReadPath = regexp.MustCompile(`^/api/(devices|settings|model-config|test-cases|test-cases/update|test-runs|test-runs/[A-Za-z0-9._%-]+/reports/[A-Za-z0-9._%-]+/content)$`)
+var idataWritePath = regexp.MustCompile(`^/api/(test-cases/update|test-runs(/[A-Za-z0-9._%-]+/(close|reports/[A-Za-z0-9._%-]+/open))?)$`)
 
 // The target is fixed loopback: remote requests cannot select a host, port or arbitrary file.
 func forwardIDATA(parent context.Context, message protocol.Message) protocol.Message {

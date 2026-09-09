@@ -16,6 +16,8 @@ import signal
 import socket
 import subprocess
 import sys
+import shutil
+import tarfile
 import tempfile
 import time
 import webbrowser
@@ -51,6 +53,7 @@ DEFAULT_SETTINGS = {
     "releaseName": "FangTian 1.10-1.12",
     "defaultEnvironment": "HarmonyOS",
     "defaultOwner": "kouyanan 30030842",
+    "testCaseArchiveUrl": "http://10.90.65.189:54322/Testcases.tar.gz",
     "testCaseRepositoryUrl": DEFAULT_TEST_CASE_REPOSITORY_URL,
     "testCaseLibraryPath": "../Phoebe-main/Testcases",
     "pythonExecutablePath": "../python310/python.exe",
@@ -64,6 +67,7 @@ SETTING_FIELD_TYPES = {
     "releaseName": str,
     "defaultEnvironment": str,
     "defaultOwner": str,
+    "testCaseArchiveUrl": str,
     "testCaseRepositoryUrl": str,
     "testCaseLibraryPath": str,
     "pythonExecutablePath": str,
@@ -309,6 +313,100 @@ def detect_network_zone() -> str:
     return "yellow" if result.returncode == 0 else "blue"
 
 
+
+TEST_CASE_UPDATE_LOCK = Lock()
+TEST_CASE_UPDATE = {"status": "idle", "message": ""}
+
+
+def update_test_case_status(status, message):
+    with TEST_CASE_UPDATE_LOCK:
+        TEST_CASE_UPDATE.update(status=status, message=message)
+
+
+def install_test_case_archive(settings):
+    """Stage and validate a package before replacing the managed library."""
+    try:
+        url = settings["testCaseArchiveUrl"].strip()
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+            raise RuntimeError("Set a valid HTTP or HTTPS test case archive URL in Settings.")
+        parent = Path.home() / ".idata"
+        if parent.is_symlink():
+            raise RuntimeError("The managed idata directory must not be a symbolic link.")
+        parent.mkdir(parents=True, exist_ok=True)
+        target = parent / "newest_testcases"
+        if target.is_symlink():
+            raise RuntimeError("The managed test case directory must not be a symbolic link.")
+        with tempfile.TemporaryDirectory(prefix=".testcases-", dir=parent) as temporary:
+            stage = Path(temporary)
+            archive = stage / "Testcases.tar.gz"
+            update_test_case_status("running", "Downloading test case archive on the execution PC…")
+            command = ["curl.exe" if os.name == "nt" else "curl", "--fail", "--location", "--silent", "--show-error", "--connect-timeout", "30", "--max-time", "600", "--max-filesize", "2147483648", "--proto", "=http,https", "--proto-redir", "=http,https", "--output", str(archive), url]
+            result = subprocess.run(command, capture_output=True, timeout=620)
+            if result.returncode:
+                raise RuntimeError("Archive download failed. Check the URL and the execution PC network connection.")
+            update_test_case_status("running", "Extracting and validating test cases…")
+            extracted = stage / "extracted"
+            extracted.mkdir()
+            with tarfile.open(archive, "r:gz", encoding="utf-8") as package:
+                total = 0
+                for count, member in enumerate(package, 1):
+                    parts = member.name.replace("\\", "/").split("/")
+                    if member.name.startswith(("/", "\\")) or ".." in parts or any(":" in p for p in parts) or not (member.isdir() or member.isfile()):
+                        raise RuntimeError("The archive contains an unsafe path or unsupported file type.")
+                    total += member.size
+                    if count > 100000 or total > 4 * 1024**3:
+                        raise RuntimeError("The extracted archive exceeds the supported size limit.")
+                    destination = extracted.joinpath(*parts)
+                    if member.isdir():
+                        destination.mkdir(parents=True, exist_ok=True)
+                    else:
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        with package.extractfile(member) as source, destination.open("wb") as output:
+                            shutil.copyfileobj(source, output)
+            candidates = list(extracted.rglob("中英文映射.csv"))
+            if len(candidates) != 1:
+                raise RuntimeError("The archive must contain exactly one test case mapping CSV.")
+            library = candidates[0].parent
+            validation = discover_test_cases({**settings, "testCaseLibraryPath": str(library)})
+            if not validation["testCases"]:
+                raise RuntimeError("The archive contains no mapped test cases.")
+            backup = stage / "previous"
+            had_previous = target.exists()
+            if had_previous:
+                target.rename(backup)
+            try:
+                library.rename(target)
+                latest = read_settings()
+                latest["testCaseLibraryPath"] = str(target)
+                if (target / "run_testcase.py").is_file():
+                    latest["runTestCasesPath"] = str(target / "run_testcase.py")
+                write_settings(latest)
+            except Exception:
+                if target.exists():
+                    shutil.rmtree(target)
+                if had_previous:
+                    backup.rename(target)
+                raise
+        update_test_case_status("complete", "Test case library updated successfully.")
+    except Exception as error:
+        update_test_case_status("failed", str(error))
+
+
+def start_test_case_update():
+    settings = read_settings()
+    with TEST_CASE_UPDATE_LOCK:
+        if TEST_CASE_UPDATE["status"] == "running":
+            return dict(TEST_CASE_UPDATE)
+        with TEST_RUNS_LOCK:
+            if any(process.get("_state") != "Finished" for run in TEST_RUNS.values() for process in run["processes"]):
+                raise RuntimeError("Wait for active test runs to finish before updating the library.")
+        TEST_CASE_UPDATE.update(status="running", message="Preparing test case update…")
+    Thread(target=install_test_case_archive, args=(settings,), daemon=True).start()
+    with TEST_CASE_UPDATE_LOCK:
+        return dict(TEST_CASE_UPDATE)
+
+
 def test_case_update_command(settings: dict) -> str:
     library_path = configured_path(settings["testCaseLibraryPath"])
     return f'git -C "{library_path}" pull --ff-only'
@@ -426,6 +524,13 @@ def discover_test_cases(settings: dict | None = None) -> dict:
 
 
 def start_test_cases(request_body: dict) -> dict:
+    with TEST_CASE_UPDATE_LOCK:
+        if TEST_CASE_UPDATE["status"] == "running":
+            raise RuntimeError("Wait for the test case library update to finish before starting tests.")
+        return start_test_cases_when_ready(request_body)
+
+
+def start_test_cases_when_ready(request_body: dict) -> dict:
     raw_case_names = request_body.get("testCases")
     inspection_mode = request_body.get("inspectionMode")
     run_name = request_body.get("name")
@@ -965,6 +1070,12 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
             send_json(self, 200, discover_hdc_devices())
             return
 
+        if request_path == "/api/test-cases/update":
+            with TEST_CASE_UPDATE_LOCK:
+                result = dict(TEST_CASE_UPDATE)
+            send_json(self, 200, result)
+            return
+
         if request_path == "/api/test-cases":
             try:
                 result = discover_test_cases()
@@ -1008,6 +1119,12 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         request_path = urlparse(self.path).path
+        if request_path == "/api/test-cases/update":
+            try:
+                send_json(self, 202, start_test_case_update())
+            except (RuntimeError, OSError) as error:
+                send_json(self, 400, {"error": str(error)})
+            return
         close_match = re.fullmatch(
             r"/api/test-runs/([^/]+)/close",
             request_path,
