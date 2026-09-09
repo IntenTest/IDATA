@@ -26,7 +26,7 @@ def prepare(archive_path):
                 if "/" in entry.filename or "\\" in entry.filename or ":" in entry.filename:
                     raise SystemExit("Unexpected Python runtime path.")
                 files["python/" + entry.filename] = python.read(entry)
-    for name in ("start.py", "run_test_process.py"):
+    for name in ("start.py", "run_test_process.py", "test_commands.py"):
         files["idata/app/" + name] = (ROOT / "idata/app" / name).read_bytes()
     for package in ("vue-3.5.24", "element-plus-2.11.8"):
         for source in sorted((ROOT / "idata/vendor" / package).rglob("*")):

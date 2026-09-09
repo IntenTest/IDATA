@@ -27,7 +27,7 @@ func prepareBundle(data []byte, root string) (string, string, error) {
 		if path.Clean(name) != name || strings.ContainsAny(name, "\\:") || strings.HasPrefix(name, "/") || strings.HasPrefix(name, "../") || entry.Mode()&os.ModeSymlink != 0 || entry.FileInfo().IsDir() {
 			return "", "", fmt.Errorf("invalid bundled runtime path: %q", name)
 		}
-		if !(strings.HasPrefix(name, "python/") || strings.HasPrefix(name, "idata/vendor/") || name == "idata/app/start.py" || name == "idata/app/run_test_process.py") {
+		if !(strings.HasPrefix(name, "python/") || strings.HasPrefix(name, "idata/vendor/") || name == "idata/app/start.py" || name == "idata/app/run_test_process.py" || name == "idata/app/test_commands.py") {
 			return "", "", fmt.Errorf("unexpected bundled runtime file: %q", name)
 		}
 		if entry.UncompressedSize64 > 64<<20 {

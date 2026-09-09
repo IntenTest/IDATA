@@ -22,6 +22,10 @@ import tempfile
 import time
 import webbrowser
 
+# The embedded Windows Python runtime omits the script directory from sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_commands import build_launch_command, build_test_command
+
 
 HOST = "127.0.0.1"
 PORT = 54321
@@ -586,44 +590,14 @@ def start_test_cases_when_ready(request_body: dict) -> dict:
     for case_id in case_ids:
         test_case = discovered_cases[case_id]
         case_name = test_case.get("executionName", test_case["title"])
-        test_command = [
-            str(python_path),
-            str(runner_path),
-            case_name,
-            str(inspection_mode),
-            device.strip(),
-        ]
+        test_command = build_test_command(
+            python_path, runner_path, case_name, inspection_mode, device
+        )
         log_path = TEST_RUN_LOG_DIRECTORY / f"{run_id}-{case_id}.log"
         status_path = TEST_RUN_LOG_DIRECTORY / f"{run_id}-{case_id}.status.json"
-        worker_command = [
-            str(python_path),
-            str(TEST_PROCESS_RUNNER),
-            str(log_path),
-            str(status_path),
-            "--",
-            *test_command,
-        ]
-        popen_options = {
-            "cwd": library_path,
-        }
-        if os.name == "nt":
-            system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
-            cmd_path = system_root / "System32" / "cmd.exe"
-            cmd_command = (
-                "chcp 65001 >nul"
-                ' & set "PYTHONUTF8=1"'
-                f" & {subprocess.list2cmdline(worker_command)}"
-            )
-            command = [
-                str(cmd_path),
-                "/d",
-                "/k",
-                cmd_command,
-            ]
-            popen_options["creationflags"] = subprocess.CREATE_NEW_CONSOLE
-        else:
-            command = worker_command
-            popen_options["start_new_session"] = True
+        command, popen_options = build_launch_command(
+            test_command, TEST_PROCESS_RUNNER, log_path, status_path, library_path
+        )
         display_command = subprocess.list2cmdline(test_command)
         processes.append(
             {

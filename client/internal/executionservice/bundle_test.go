@@ -29,13 +29,16 @@ func testBundle(t *testing.T, files map[string]string) []byte {
 
 func TestBundleUpgradePreservesSettingsAndRepairsRuntime(t *testing.T) {
 	root := t.TempDir()
-	files := map[string]string{"python/python.exe": "runtime", "idata/app/start.py": "worker v1", "idata/app/run_test_process.py": "runner"}
+	files := map[string]string{"python/python.exe": "runtime", "idata/app/start.py": "worker v1", "idata/app/run_test_process.py": "runner", "idata/app/test_commands.py": "commands"}
 	script, python, err := prepareBundle(testBundle(t, files), root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if script != filepath.Join(root, "idata", "app", "start.py") || python != filepath.Join(root, "python", "python.exe") {
 		t.Fatal("incorrect bundle paths")
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "idata", "app", "test_commands.py")); err != nil || string(data) != "commands" {
+		t.Fatal("command module was not extracted")
 	}
 	settings := filepath.Join(root, "idata", "app", "config", "settings.json")
 	if err := os.MkdirAll(filepath.Dir(settings), 0700); err != nil {
