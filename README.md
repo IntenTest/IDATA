@@ -130,3 +130,7 @@ it is running to resume watching. Client or worker shutdown interrupts the updat
 Deploy the updated server, client executable, and Python worker together.
 
 Regression check: `python3 -m unittest discover -s idata/app -p 'test_*.py'`.
+
+## Ubuntu Server 一键部署
+
+按 [部署指导](LINUX_SERVER_DEPLOY.md) 将 `deploy-ubuntu.sh`、Release 服务端二进制和 `SHA256SUMS` 拷到 Ubuntu 后执行脚本。支持首次安装和重复升级，固定端口 `12345`，保留已有 Token 与设备凭据。

@@ -263,3 +263,7 @@ sudo systemctl daemon-reload
 ```
 
 设备凭据仍保存在 `/var/lib/idata`。只有确认不再需要恢复已批准设备时，才应另行删除该目录。
+
+## Ubuntu Server 一键部署
+
+按 [部署指导](../LINUX_SERVER_DEPLOY.md) 将 `deploy-ubuntu.sh`、Release 服务端二进制和 `SHA256SUMS` 拷到 Ubuntu 后执行脚本。支持首次安装和重复升级，固定端口 `12345`，保留已有 Token 与设备凭据。

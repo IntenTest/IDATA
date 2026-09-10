@@ -1,213 +1,137 @@
-# Fast Linux Server Deployment
+# Ubuntu Server 一键离线部署 / 升级
 
-The fastest installation method is to download the required files on a Windows computer, transfer them to the intranet Linux server, and install them locally. The Linux server does not need internet access, the Go compiler, or a source build.
+将脚本和同一个 Release 的服务端文件拷到 Ubuntu，执行一次命令，即可首次安装或重新部署。
+固定监听 **TCP 12345**，由 systemd 自动启动。Ubuntu 不需要联网、Go、Python 或源码编译。
 
-Current production release: [IDATA Remote v0.2.9](https://github.com/IntenTest/IDATA/releases/tag/v0.2.9). The commands and checksum manifest below are pinned to this release.
+## 1. 准备三个文件
 
-These instructions are for Ubuntu or Debian on an `x86_64` system.
+在能访问 GitHub 的电脑上打开 [最新正式 Release](https://github.com/IntenTest/IDATA/releases/latest)，
+下载同一个版本的两个附件：
 
-## 1. Download on Windows and transfer to Linux
+- `idata-server-linux-amd64`
+- `SHA256SUMS`
 
-On a Windows computer with internet access, download these three files:
-
-1. [idata-server-linux-amd64](https://github.com/IntenTest/IDATA/releases/download/v0.2.9/idata-server-linux-amd64)
-2. [idata-server.service](https://raw.githubusercontent.com/IntenTest/IDATA/v0.2.9/server/deploy/idata-server.service)
-3. [SHA256SUMS](https://github.com/IntenTest/IDATA/releases/download/v0.2.9/SHA256SUMS)
-
-Keep the filenames exactly as shown. Copy all three files to the same folder on the Linux server using an approved method such as a USB drive, an internal file share, WinSCP, or `scp`. The following commands assume the files were copied to `/tmp/idata-install`:
+另存仓库 main 中的 [deploy-ubuntu.sh](https://raw.githubusercontent.com/IntenTest/IDATA/main/server/deploy/deploy-ubuntu.sh)。
+三个文件保持原名，放在同一目录，拷贝到 Ubuntu，例如：
 
 ```text
-/tmp/idata-install/idata-server-linux-amd64
-/tmp/idata-install/idata-server.service
-/tmp/idata-install/SHA256SUMS
+/home/ubuntu/idata-install/
+├── deploy-ubuntu.sh
+├── idata-server-linux-amd64
+└── SHA256SUMS
 ```
 
-On Windows, you can verify the server binary in PowerShell before transferring it:
+截至本次文档更新，最新正式版为 `v0.2.10`。之后请从最新 Release 获取二进制和对应的
+校验文件，不要混用不同版本。脚本部署的是你拷入的版本，不会联网查询或下载版本。
+不用下载 Windows Client、源码压缩包或单独的 `idata-server.service`；服务定义已内置在脚本中。
+从浏览器保存脚本时应保存原始文件，不能保存 GitHub HTML 页面。
 
-```powershell
-Get-FileHash .\idata-server-linux-amd64 -Algorithm SHA256
-```
+## 2. 执行部署
 
-Compare the result with the `idata-server-linux-amd64` entry in `SHA256SUMS`.
-
-After transferring the files, verify the binary again on Linux:
+支持运行 systemd 的 **Ubuntu Server x86_64 / amd64**，使用有 sudo 权限的账号：
 
 ```bash
-cd /tmp/idata-install
-
-sha256sum --check --ignore-missing SHA256SUMS
+sudo bash /home/ubuntu/idata-install/deploy-ubuntu.sh
 ```
 
-The verification should report:
+也可以让脚本和 Release 文件分开存放：
+
+```bash
+sudo bash /path/to/deploy-ubuntu.sh /path/to/release-files
+```
+
+不用事先创建账号、配置 Token、停止旧服务或删除旧版本。脚本使用 Ubuntu 自带的 Bash、
+coreutils、util-linux、iproute2 和账号管理工具；若使用裁剪镜像缺少这些工具，会在停止旧服务前报错，
+不会自动访问软件源安装依赖。
+
+脚本会：
+
+1. 将二进制暂存，校验 `SHA256SUMS` 中唯一的服务端条目及 ELF/x86_64 标识。校验失败不触碰现有安装。
+2. 创建 `idata` 服务账号；首次安装生成随机管理员 Token，保存到 `/etc/idata/idata-server.env`。
+3. 升级时保留现有配置和 Token，只将 `IDATA_LISTEN_ADDR` 改为 `:12345`。
+4. 在 `/var/backups/idata-deploy.*` 保存原二进制、配置和 service 文件。备份仅 root 可读。
+5. 停止旧服务，确认 12345 未被其他进程占用，替换程序并启动。
+6. 检查服务运行状态与 `http://127.0.0.1:12345/healthz`，成功后开启开机自启。
+7. 安装或健康检查失败时恢复原二进制、配置及 service，并恢复原来的启动/启用状态。
+
+设备凭据 `/var/lib/idata` 不删除、不覆盖，已注册设备可继续连接。
+升级会短暂中断连接，正在执行任务时应先等待任务结束。
+现有 systemd drop-in、自定义 ExecStart 或安装路径符号链接会被拒绝，避免误覆盖特殊部署；
+该脚本支持本仓库标准安装路径。现有配置如果无效，启动检查会失败并回滚，不会擅自重置 Token。
+
+## 3. 访问与查看状态
+
+部署成功后访问：
 
 ```text
-idata-server-linux-amd64: OK
+http://服务器IP:12345/
+http://服务器IP:12345/admin/
 ```
 
-Do not install or execute the file if its checksum does not match.
-
-## 2. Install the binary and service account
+查看管理员 Token（脚本不会把密钥写到部署输出中）：
 
 ```bash
-cd /tmp/idata-install
-
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin idata 2>/dev/null || true
-
-sudo install -d -m 0755 /opt/idata
-sudo install -d -m 0750 -o root -g idata /etc/idata
-sudo install -m 0755 idata-server-linux-amd64 /opt/idata/idata-server
+sudo cat /etc/idata/idata-server.env
 ```
 
-## 3. Create the configuration
-
-Generate and display a secure administrator token:
+使用其中的 `IDATA_ADMIN_TOKEN` 登录管理页面。查看运行状态与日志：
 
 ```bash
-ADMIN_TOKEN="$(openssl rand -hex 32)"
-echo "Save this admin token: $ADMIN_TOKEN"
+sudo systemctl status idata-server --no-pager
+sudo journalctl -u idata-server -n 100 --no-pager
 ```
 
-Save this token somewhere secure, and then create the server configuration:
+如已安装 curl，可手动检查：
 
 ```bash
-sudo tee /etc/idata/idata-server.env >/dev/null <<EOF
-IDATA_AGENT_TOKEN=
-IDATA_ADMIN_TOKEN=$ADMIN_TOKEN
-IDATA_LISTEN_ADDR=:80
-IDATA_DEVICE_CREDENTIALS_FILE=/var/lib/idata/device-credentials.json
-IDATA_ENROLLMENT_AUTO_APPROVE=true
-IDATA_BROWSER_PAIRING=false
-IDATA_PAIRING_REQUEST_TTL=2m
-IDATA_DEVICE_SESSION_TTL=8h
-EOF
-
-sudo chown root:idata /etc/idata/idata-server.env
-sudo chmod 0640 /etc/idata/idata-server.env
-unset ADMIN_TOKEN
+curl --fail http://127.0.0.1:12345/healthz
 ```
 
-Automatic enrollment is convenient for a trusted internal network. Set `IDATA_ENROLLMENT_AUTO_APPROVE=false` if every new client must be approved manually.
+正常响应为 `{"status":"ok"}`。脚本自己的检查不依赖 curl。
 
-## 4. Install and start the systemd service
+## 4. 网络与 Windows Client
+
+脚本不修改防火墙或云安全组。如果启用了访问限制，请允许可信内网访问 TCP **12345**。
+例如已启用 UFW 时，按实际内网网段配置：
 
 ```bash
-cd /tmp/idata-install
-sudo install -m 0644 idata-server.service /etc/systemd/system/idata-server.service
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now idata-server
+sudo ufw allow from 192.168.1.0/24 to any port 12345 proto tcp
 ```
 
-## 5. Verify the deployment
+默认采用 HTTP/WS，首次安装自动批准原生 Client 注册，仅适用于可信内网；不要直接暴露到公网。
+需要逐台审批时，将配置中的 `IDATA_ENROLLMENT_AUTO_APPROVE` 设为 `false`，然后重启服务。
+
+Windows 上建议使用同一 Release 的 `idata-client-windows-amd64.exe`。退出旧 Client，
+替换 EXE，保留旁边的 `idata-client.json`，运行一次以刷新 URL 协议注册。
+打开 `http://服务器IP:12345/`，点击 **Open IDATA Client**，网页会将服务端地址和端口传给 Client。
+Client 本机使用的 54321、17891 与服务端 12345 是不同用途的端口。
+
+Client 内含执行 worker 和私有 Python 运行时；测试执行所需的 HDC、测试依赖及 Python 配置仍需保留。
+测试用例库仍从网页 Settings 中的 **Test case archive URL** 下载到 Windows 执行机，
+默认地址为 `http://10.90.65.189:54322/Testcases.tar.gz`。
+在 Test Cases 点击 **Update test case library**，验证后安装到 `%USERPROFILE%\.idata\newest_testcases`。
+无需将测试用例压缩包上传到 Ubuntu。
+
+## 5. 后续升级与恢复
+
+每次更新只需用同一个新 Release 的二进制和 `SHA256SUMS` 替换安装目录里的文件，再运行同一命令。
+不要删除 `/etc/idata` 或 `/var/lib/idata`。旧设备凭据不会因重装而丢失。
+
+启动失败会自动回滚。首次安装失败会移除本次安装的程序、配置及 service，留下账号和目录以便重试。
+回滚失败会报错，应通过上面的 systemd 日志排查。健康检查仅验证服务可运行，不代表所有业务功能已验证。
+
+成功升级后若发现业务问题，可以将保存的旧 Release 二进制和对应 `SHA256SUMS` 放回安装目录，
+再次运行脚本。这样仍保持 12345 和当前 Token。
+备份目录保存部署前的程序、配置和 service，可用于手动恢复原配置；脚本输出具体备份路径。
+备份含密钥，应妥善保管，并在确认新版本稳定后按需要清理。
+备份不包含设备凭据数据库；脚本不会对数据库做降级回写。重大版本升级前应另外备份
+`/var/lib/idata`（以及自定义凭据路径），并确认版本的数据兼容性。
+
+## 验证脚本的维护说明
+
+在 Linux 环境运行隔离测试（临时目录与模拟 systemd，不操作当前服务）：
 
 ```bash
-curl --fail http://127.0.0.1/healthz
-sudo systemctl --no-pager status idata-server
+python3 -m unittest discover -s server/deploy/tests -v
+bash -n server/deploy/deploy-ubuntu.sh
 ```
-
-The health endpoint should return:
-
-```json
-{"status":"ok"}
-```
-
-Open the IDATA interface in a browser:
-
-```text
-http://SERVER_IP/
-```
-
-To follow the server logs:
-
-```bash
-sudo journalctl -u idata-server -f
-```
-
-## 6. Connect the production Windows Client
-
-Download `idata-client-windows-amd64.exe` from the same [v0.2.9 release](https://github.com/IntenTest/IDATA/releases/tag/v0.2.9) on the Windows PC.
-
-The production Client includes its local execution worker and private Python runtime. No source checkout or separate Python installation is needed for the worker. Existing HDC, test scripts, and test dependencies are still required for the operations that use them. Update both the Linux Server and Windows Client for the test case archive feature.
-
-The production Client does not need a Server port configured in advance:
-
-1. Exit any old running Client, replace the executable in its installation directory, and start `idata-client-windows-amd64.exe` once to refresh URL protocol registration.
-2. Open `http://SERVER_IP/` in the Windows browser.
-3. Click **Open IDATA Client**.
-4. The website launches `idata://connect` with the Server IP, port, and security mode.
-5. The running Client connects and displays the exact Server address and port it received.
-
-With the configuration in this guide, the website is on TCP port `80`. The Client also uses local loopback ports `54321` and `17891`; these are separate from the Server listening port. If the Server is configured with `IDATA_LISTEN_ADDR=:54321`, open `http://SERVER_IP:54321/` and allow that Server port through the firewall. The launch link preserves this port. Adjust the health-check URLs accordingly.
-
-## 7. Upgrade an existing Linux installation
-
-Download the new `idata-server-linux-amd64` on Windows, verify its SHA-256 value, and transfer it to `/tmp/idata-install` as described above. Then run:
-
-```bash
-cd /tmp/idata-install
-
-sha256sum --check --ignore-missing SHA256SUMS
-
-sudo cp -p /opt/idata/idata-server /opt/idata/idata-server.previous
-sudo systemctl stop idata-server
-sudo install -m 0755 idata-server-linux-amd64 /opt/idata/idata-server
-sudo systemctl start idata-server
-
-curl --fail http://127.0.0.1/healthz
-sudo systemctl --no-pager status idata-server
-```
-
-The existing `/etc/idata/idata-server.env` configuration and `/var/lib/idata` device credentials are preserved.
-
-## 8. Restrict network access
-
-If UFW is enabled, allow access only from the trusted internal network. For example:
-
-```bash
-sudo ufw allow from 192.168.1.0/24 to any port 80 proto tcp
-sudo ufw status
-```
-
-Replace `192.168.1.0/24` with the actual trusted subnet.
-
-> [!WARNING]
-> IDATA v0.2.9 uses unencrypted HTTP and WebSocket connections. Do not expose TCP port 80 directly to the public internet. For public access, use an HTTPS reverse proxy and appropriate access restrictions.
-
-## 9. Update the test case library
-
-On each Windows execution PC, exit the old Client and replace its executable with
-`idata-client-windows-amd64.exe` from v0.2.9. Preserve `idata-client.json` beside it.
-Start the new executable once and then click **Open IDATA Client** on the website.
-The EXE includes the updated worker and its Python runtime.
-
-In website Settings, set **Test case archive URL** to
-`http://10.90.65.189:54322/Testcases.tar.gz` (the default), or another reachable
-HTTP/HTTPS archive URL. Settings save automatically. On Test Cases, click
-**Update test case library** and wait for completion. The Windows execution PC,
-not the Linux web server, must be able to reach the archive URL.
-
-The library is staged, validated, and installed in
-`%USERPROFILE%\.idata\newest_testcases`. A missing directory is created. The old
-managed library is replaced only after validation. The page reloads cases through
-the Client. Stop active test runs before updating. No testcase archive needs to be
-uploaded to the Linux web server. If you previously used `%USERPROFILE%\idata`,
-that older location is left untouched; successful updates switch Settings to the
-new hidden-directory location.
-
-The Python interpreter and HDC/test dependencies used by test execution remain
-separate from the bundled worker runtime; retain their existing configuration.
-
-## 10. Roll back an upgrade
-
-If the upgraded server fails, restore the saved executable:
-
-```bash
-sudo systemctl stop idata-server
-sudo cp -p /opt/idata/idata-server.previous /opt/idata/idata-server
-sudo systemctl start idata-server
-```
-
-Keep a copy of the previous Windows executable before replacement. Exit the new
-Client before restoring it. Existing credentials and settings should be retained.
-For a nonstandard installation, inspect `sudo systemctl cat idata-server` and use
-its actual ExecStart binary path instead of `/opt/idata/idata-server`.
