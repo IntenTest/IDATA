@@ -155,7 +155,7 @@ func TestTerminalAuthorizationScopesDeviceTokenToItsClient(t *testing.T) {
 	}
 }
 
-func TestWebConsoleIsEmbedded(t *testing.T) {
+func TestIDATAWorkspaceIsTheOnlyEmbeddedWebPage(t *testing.T) {
 	app := newTestServer(t)
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	response := httptest.NewRecorder()
@@ -163,16 +163,18 @@ func TestWebConsoleIsEmbedded(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
 	}
-	if !strings.Contains(response.Body.String(), "iData Console") {
-		t.Fatal("web console content was not served")
+	if !strings.Contains(response.Body.String(), "IDATA · 基于意图的自动化测试助手") {
+		t.Fatal("IDATA workspace was not served")
 	}
-	for _, label := range []string{"Windows：启动 Client", "macOS：复制启动命令"} {
-		if !strings.Contains(response.Body.String(), label) {
-			t.Fatalf("web login action %q was not served", label)
+	remote := httptest.NewRecorder()
+	app.Handler().ServeHTTP(remote, httptest.NewRequest(http.MethodGet, "/remote.js", nil))
+	for _, label := range []string{"Open IDATA Client", "启动 IDATA 客户端", "<el-dialog", ":close-on-click-modal=\"false\"", ":close-on-press-escape=\"false\"", ":show-close=\"false\""} {
+		if !strings.Contains(remote.Body.String(), label) {
+			t.Fatalf("connection action %q was not served", label)
 		}
 	}
-	if strings.Contains(response.Body.String(), "本机设备访问令牌") {
-		t.Fatal("ordinary web login still asks for a device token")
+	if strings.Contains(response.Body.String(), "iData Console") {
+		t.Fatal("legacy server console is still present")
 	}
 	if response.Header().Get("Content-Security-Policy") == "" {
 		t.Fatal("content security policy is missing")

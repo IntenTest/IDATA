@@ -1268,6 +1268,7 @@ const App = {
     });
     watch(language, (value) => {
       window.localStorage.setItem("idata-language", value);
+      window.dispatchEvent(new CustomEvent("idata-language-change", { detail: value }));
       document.documentElement.lang = value;
       document.title = value === "zh-CN"
         ? "IDATA · 基于意图的自动化测试助手-自测试平台"

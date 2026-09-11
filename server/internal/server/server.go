@@ -3,11 +3,9 @@ package server
 import (
 	"context"
 	"crypto/subtle"
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -27,9 +25,6 @@ var (
 	deviceTokenHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 	pairingIDPattern       = regexp.MustCompile(`^[a-f0-9]{32}$`)
 )
-
-//go:embed web/*
-var webFiles embed.FS
 
 type Server struct {
 	config           Config
@@ -119,41 +114,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /api/v1/device-credentials/{credential_id}", s.requireAdmin(http.HandlerFunc(s.handleCredentialRevoke)))
 	mux.HandleFunc("GET /api/v1/clients/{client_id}/terminal", s.handleTerminal)
 	mux.Handle("POST /api/v1/clients/", s.requireAdmin(http.HandlerFunc(s.handleCommand)))
-	webRoot, err := fs.Sub(webFiles, "web")
-	if err != nil {
-		panic(fmt.Sprintf("load embedded web console: %v", err))
-	}
-	fileServer := http.FileServer(http.FS(webRoot))
-	consoleAssets := http.StripPrefix("/console/", fileServer)
-	mux.Handle("GET /console/", consoleAssets)
-	mux.HandleFunc("GET /connect", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/connect/", http.StatusTemporaryRedirect)
-	})
-	mux.HandleFunc("GET /connect/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/connect/" {
-			http.NotFound(w, r)
-			return
-		}
-		serveWebIndex(fileServer, w, r)
-	})
-	mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) {
-		serveWebIndex(fileServer, w, r)
-	})
-	mux.HandleFunc("GET /admin/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/admin/" {
-			http.NotFound(w, r)
-			return
-		}
-		serveWebIndex(fileServer, w, r)
-	})
-	mux.Handle("GET /", fileServer)
 	return securityHeaders(mux)
-}
-
-func serveWebIndex(fileServer http.Handler, w http.ResponseWriter, r *http.Request) {
-	request := r.Clone(r.Context())
-	request.URL.Path = "/"
-	fileServer.ServeHTTP(w, request)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

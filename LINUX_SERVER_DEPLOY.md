@@ -11,7 +11,7 @@
 - `idata-server-linux-amd64`
 - `SHA256SUMS`
 
-另存仓库 main 中的 [deploy-ubuntu.sh](https://raw.githubusercontent.com/IntenTest/IDATA/main/server/deploy/deploy-ubuntu.sh)。
+从同一个 Release 下载附件 `deploy-ubuntu.sh`。
 三个文件保持原名，放在同一目录，拷贝到 Ubuntu，例如：
 
 ```text
@@ -21,7 +21,7 @@
 └── SHA256SUMS
 ```
 
-截至本次文档更新，最新正式版为 `v0.2.10`。之后请从最新 Release 获取二进制和对应的
+截至本次文档更新，最新正式版为 `v0.2.11`。之后请从最新 Release 获取二进制和对应的
 校验文件，不要混用不同版本。脚本部署的是你拷入的版本，不会联网查询或下载版本。
 不用下载 Windows Client、源码压缩包或单独的 `idata-server.service`；服务定义已内置在脚本中。
 从浏览器保存脚本时应保存原始文件，不能保存 GitHub HTML 页面。

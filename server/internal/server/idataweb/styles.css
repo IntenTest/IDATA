@@ -45,6 +45,15 @@ input {
   color: #69708e;
 }
 
+.remote-connection-dialog {
+  max-width: calc(100vw - 32px);
+}
+
+.remote-connection-description {
+  margin: 0 0 20px;
+  line-height: 1.7;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
