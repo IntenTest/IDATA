@@ -11,7 +11,8 @@
   const translations = {
   "Connect IDATA Client": "连接 IDATA 客户端",
   "Open IDATA Client": "启动 IDATA 客户端",
-  "Open IDATA Client on this computer to access devices and run tests. This window will close automatically when the client connects.": "请启动本机的 IDATA 客户端，以访问设备并运行测试。接入成功后，此弹窗将自动关闭。",
+  "Client started — refresh connection": "已启动客户端，刷新连接",
+  "Open IDATA Client on this computer to access devices and run tests. This page will refresh automatically when the client connects.": "请启动本机的 IDATA 客户端，以访问设备并运行测试。检测到接入后，页面将自动刷新。",
   "Looking for the IDATA Client…": "正在检测 IDATA 客户端接入状态…",
   "IDATA Client is not connected. Open it to continue.": "尚未检测到 IDATA 客户端接入，请点击下方按钮启动客户端。",
   "The server could not authorize this browser.": "服务器无法授权此浏览器，请稍后重试。",
@@ -33,7 +34,7 @@
 
   Vue.createApp({
     setup() {
-      return { connection, openWindowsClient, t };
+      return { connection, openWindowsClient, refreshConnection, t };
     },
     template: `
       <el-dialog
@@ -48,16 +49,17 @@
         class="remote-connection-dialog"
       >
         <p class="remote-connection-description">
-          {{ t('Open IDATA Client on this computer to access devices and run tests. This window will close automatically when the client connects.') }}
+          {{ t('Open IDATA Client on this computer to access devices and run tests. This page will refresh automatically when the client connects.') }}
         </p>
         <el-alert :title="t(connection.message)" type="info" :closable="false" show-icon />
         <template #footer>
+          <el-button @click="refreshConnection">{{ t('Client started — refresh connection') }}</el-button>
           <el-button type="primary" @click="openWindowsClient">{{ t('Open IDATA Client') }}</el-button>
         </template>
       </el-dialog>
     `,
   }).use(ElementPlus).mount("#remote-connection");
-  const state = { client: "", connectionPromise: null, stopped: false };
+  const state = { client: "", connectionPromise: null, stopped: false, observedDisconnected: false };
 
   const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -71,6 +73,15 @@
     params.set("client", clientID);
     history.replaceState({}, "", `${location.pathname}?${params.toString()}`);
     connection.visible = false;
+    // Refresh only after an observed disconnection, never on every page load.
+    if (state.observedDisconnected) {
+      state.stopped = true;
+      refreshConnection();
+    }
+  }
+
+  function refreshConnection() {
+    location.reload();
   }
 
   function launchURL() {
@@ -90,6 +101,7 @@
           throw new Error(loginResult.error || "The server could not authorize this browser.");
         }
         if (login.status === 202) {
+          state.observedDisconnected = true;
           showConnectionDialog("IDATA Client is not connected. Open it to continue.");
           await delay(1000);
           continue;
@@ -109,6 +121,7 @@
         setConnected(selected.id);
         return selected.id;
       } catch (error) {
+        state.observedDisconnected = true;
         showConnectionDialog(error.message || "The IDATA Client connection is unavailable.");
         await delay(1500);
       }
@@ -128,6 +141,7 @@
   }
 
   function connectionLost(message) {
+    state.observedDisconnected = true;
     state.client = "";
     void connect(message || "The IDATA Client disconnected. Reopen it to continue.");
   }
