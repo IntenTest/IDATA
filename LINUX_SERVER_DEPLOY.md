@@ -1,4 +1,4 @@
-# IDATA Linux 服务器重新部署（v0.2.14）
+# IDATA Linux 服务器重新部署（v0.2.15）
 
 本文用于在 Ubuntu x86-64 服务器上首次安装或升级 IDATA Server。
 重新部署会保留现有的监听地址、Token 和已批准的设备凭据。
@@ -7,9 +7,9 @@
 
 推荐只下载以下两个文件：
 
-1. [`IDATA-ubuntu-v0.2.14.tar.gz`](https://github.com/IntenTest/IDATA/releases/download/v0.2.14/IDATA-ubuntu-v0.2.14.tar.gz)
+1. [`IDATA-ubuntu-v0.2.15.tar.gz`](https://github.com/IntenTest/IDATA/releases/download/v0.2.15/IDATA-ubuntu-v0.2.15.tar.gz)
    —— Ubuntu 完整部署包，内含 Linux Server、部署脚本、本文档和包内校验文件。
-2. [`SHA256SUMS`](https://github.com/IntenTest/IDATA/releases/download/v0.2.14/SHA256SUMS)
+2. [`SHA256SUMS`](https://github.com/IntenTest/IDATA/releases/download/v0.2.15/SHA256SUMS)
    ——用于校验下载的 `.tar.gz` 是否完整。
 
 Linux 服务器不需要下载 `idata-client-windows-amd64.exe`；该文件只用于
@@ -18,12 +18,12 @@ Windows 执行电脑。
 如果 Ubuntu 服务器可以访问 GitHub，直接执行：
 
 ```bash
-mkdir -p "$HOME/idata-release-v0.2.14"
-cd "$HOME/idata-release-v0.2.14"
+mkdir -p "$HOME/idata-release-v0.2.15"
+cd "$HOME/idata-release-v0.2.15"
 curl --fail --location --remote-name \
-  https://github.com/IntenTest/IDATA/releases/download/v0.2.14/IDATA-ubuntu-v0.2.14.tar.gz
+  https://github.com/IntenTest/IDATA/releases/download/v0.2.15/IDATA-ubuntu-v0.2.15.tar.gz
 curl --fail --location --remote-name \
-  https://github.com/IntenTest/IDATA/releases/download/v0.2.14/SHA256SUMS
+  https://github.com/IntenTest/IDATA/releases/download/v0.2.15/SHA256SUMS
 ```
 
 如果服务器不能访问 GitHub，先在可联网电脑上下载上述两个文件，再通过
@@ -34,9 +34,9 @@ SCP、SFTP 或内网文件传输工具将它们放到 Ubuntu 服务器的同一�
 进入两个下载文件所在的目录，执行：
 
 ```bash
-grep ' IDATA-ubuntu-v0.2.14.tar.gz$' SHA256SUMS | sha256sum --check -
-tar -xzf IDATA-ubuntu-v0.2.14.tar.gz
-cd IDATA-ubuntu-v0.2.14
+grep ' IDATA-ubuntu-v0.2.15.tar.gz$' SHA256SUMS | sha256sum --check -
+tar -xzf IDATA-ubuntu-v0.2.15.tar.gz
+cd IDATA-ubuntu-v0.2.15
 sha256sum --check SHA256SUMS
 ```
 
