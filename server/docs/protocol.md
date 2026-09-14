@@ -38,10 +38,10 @@ IP. Explicitly configured proxies supply X-Real-IP; other peers use their socket
 address. All HTTP/WebSocket handlers apply the same PC scope. HTML reports are
 sandboxed and cannot run scripts against the control origin.
 
-Test case archives: POST /api/test-cases/update starts or rejoins a background update;
+Test case repositories: POST /api/test-cases/update starts or rejoins a background update;
 GET /api/test-cases/update returns idle/running/complete/failed and a message.
-The worker downloads the saved testCaseArchiveUrl on the execution PC, validates
-UTF-8 archive paths and the mapping CSV, replaces ~/.idata/newest_testcases, and
+The worker shallow-clones the saved testCaseRepositoryUrl's `release_Idata` branch
+on the execution PC, validates the mapping CSV, replaces ~/.idata/newest_testcases, and
 saves the new library path. Request deadlines remain unchanged.
 
 Browser launch accepts `idata://connect?server=HOST&port=PORT&secure=0|1`.

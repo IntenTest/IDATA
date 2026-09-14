@@ -17,7 +17,6 @@ import socket
 import subprocess
 import sys
 import shutil
-import tarfile
 import tempfile
 import time
 import webbrowser
@@ -51,6 +50,7 @@ DEFAULT_TEST_CASE_REPOSITORY_URL = (
     "https://codehub-dg-y.huawei.com/k30030842/Testcases.git"
 )
 FALLBACK_TEST_CASE_REPOSITORY_URL = "https://github.com/IntenTest/Testcases.git"
+TEST_CASE_REPOSITORY_BRANCH = "release_Idata"
 TEST_RUNS = {}
 TEST_RUNS_LOCK = Lock()
 TEST_RUN_LOG_DIRECTORY = APP_DIRECTORY / "logs" / "test-runs"
@@ -348,13 +348,13 @@ def update_test_case_status(status, message):
         TEST_CASE_UPDATE.update(status=status, message=message)
 
 
-def install_test_case_archive(settings):
-    """Stage and validate a package before replacing the managed library."""
+def install_test_case_repository(settings):
+    """Clone and validate the release branch before replacing the managed library."""
     try:
-        url = settings["testCaseArchiveUrl"].strip()
+        url = settings["testCaseRepositoryUrl"].strip()
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
-            raise RuntimeError("Set a valid HTTP or HTTPS test case archive URL in Settings.")
+            raise RuntimeError("Set a valid HTTP or HTTPS test case repository URL in Settings.")
         parent = Path.home() / ".idata"
         if parent.is_symlink():
             raise RuntimeError("The managed idata directory must not be a symbolic link.")
@@ -364,38 +364,36 @@ def install_test_case_archive(settings):
             raise RuntimeError("The managed test case directory must not be a symbolic link.")
         with tempfile.TemporaryDirectory(prefix=".testcases-", dir=parent) as temporary:
             stage = Path(temporary)
-            archive = stage / "Testcases.tar.gz"
-            update_test_case_status("running", "Downloading test case archive on the execution PC…")
-            command = ["curl.exe" if os.name == "nt" else "curl", "--fail", "--location", "--silent", "--show-error", "--connect-timeout", "30", "--max-time", "600", "--max-filesize", "2147483648", "--proto", "=http,https", "--proto-redir", "=http,https", "--output", str(archive), url]
-            result = subprocess.run(command, capture_output=True, timeout=620)
+            library = stage / "repository"
+            update_test_case_status(
+                "running",
+                f"Cloning test cases from {TEST_CASE_REPOSITORY_BRANCH}…",
+            )
+            command = [
+                "git", "clone", "--branch", TEST_CASE_REPOSITORY_BRANCH,
+                "--single-branch", "--depth", "1", "--", url, str(library),
+            ]
+            try:
+                result = subprocess.run(
+                    command, capture_output=True, text=True, timeout=600
+                )
+            except FileNotFoundError as error:
+                raise RuntimeError(
+                    "Git was not found. Install Git and ensure it is available on PATH."
+                ) from error
+            except subprocess.TimeoutExpired as error:
+                raise RuntimeError("The test case repository clone timed out.") from error
             if result.returncode:
-                raise RuntimeError("Archive download failed. Check the URL and the execution PC network connection.")
-            update_test_case_status("running", "Extracting and validating test cases…")
-            extracted = stage / "extracted"
-            extracted.mkdir()
-            with tarfile.open(archive, "r:gz", encoding="utf-8") as package:
-                total = 0
-                for count, member in enumerate(package, 1):
-                    parts = member.name.replace("\\", "/").split("/")
-                    if member.name.startswith(("/", "\\")) or ".." in parts or any(":" in p for p in parts) or not (member.isdir() or member.isfile()):
-                        raise RuntimeError("The archive contains an unsafe path or unsupported file type.")
-                    total += member.size
-                    if count > 100000 or total > 4 * 1024**3:
-                        raise RuntimeError("The extracted archive exceeds the supported size limit.")
-                    destination = extracted.joinpath(*parts)
-                    if member.isdir():
-                        destination.mkdir(parents=True, exist_ok=True)
-                    else:
-                        destination.parent.mkdir(parents=True, exist_ok=True)
-                        with package.extractfile(member) as source, destination.open("wb") as output:
-                            shutil.copyfileobj(source, output)
-            candidates = list(extracted.rglob("中英文映射.csv"))
-            if len(candidates) != 1:
-                raise RuntimeError("The archive must contain exactly one test case mapping CSV.")
-            library = candidates[0].parent
+                detail = result.stderr.strip() or result.stdout.strip()
+                raise RuntimeError(
+                    f"Unable to clone test case branch {TEST_CASE_REPOSITORY_BRANCH}: {detail}"
+                )
+            update_test_case_status("running", "Validating test cases…")
+            if not (library / "中英文映射.csv").is_file():
+                raise RuntimeError("The repository root must contain 中英文映射.csv.")
             validation = discover_test_cases({**settings, "testCaseLibraryPath": str(library)})
             if not validation["testCases"]:
-                raise RuntimeError("The archive contains no mapped test cases.")
+                raise RuntimeError("The repository contains no mapped test cases.")
             backup = stage / "previous"
             had_previous = target.exists()
             if had_previous:
@@ -425,14 +423,17 @@ def start_test_case_update():
             if any(process.get("_state") != "Finished" for run in TEST_RUNS.values() for process in run["processes"]):
                 raise RuntimeError("Wait for active test runs to finish before updating the library.")
         TEST_CASE_UPDATE.update(status="running", message="Preparing test case update…")
-    Thread(target=install_test_case_archive, args=(settings,), daemon=True).start()
+    Thread(target=install_test_case_repository, args=(settings,), daemon=True).start()
     with TEST_CASE_UPDATE_LOCK:
         return dict(TEST_CASE_UPDATE)
 
 
 def test_case_update_command(settings: dict) -> str:
     library_path = configured_path(settings["testCaseLibraryPath"])
-    return f'git -C "{library_path}" pull --ff-only'
+    return (
+        f'git -C "{library_path}" pull --ff-only origin '
+        f'{TEST_CASE_REPOSITORY_BRANCH}'
+    )
 
 
 def read_test_case_mapping(library_path: Path) -> tuple[dict[str, dict], Path]:
