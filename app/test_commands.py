@@ -9,16 +9,16 @@ from pathlib import Path
 import subprocess
 
 
-def build_test_command(python_path, runner_path, case_name, inspection_mode, device):
-    """Arguments passed to run_testcase.py, in runner-defined order."""
-    return [str(python_path), str(runner_path), case_name,
-            str(inspection_mode), device.strip()]
+def build_test_command(idata_path, runner_path, case_name, inspection_mode):
+    """Build the IDATA CLI bundle command for one test case."""
+    return [str(idata_path), "cli", "bundle", "run", "--path",
+            str(runner_path), "--", case_name, str(inspection_mode)]
 
 
-def build_launch_command(test_command, process_runner, log_path, status_path,
-                         library_path):
+def build_launch_command(test_command, worker_executable, process_runner, log_path,
+                         status_path, library_path):
     """Wrap a test with persistent logging and platform-specific startup."""
-    worker_command = [test_command[0], str(process_runner), str(log_path),
+    worker_command = [str(worker_executable), str(process_runner), str(log_path),
                       str(status_path), "--", *test_command]
     options = {"cwd": library_path}
     if os.name == "nt":

@@ -60,8 +60,7 @@ DEFAULT_SETTINGS = {
     "testCaseArchiveUrl": "http://10.90.65.189:54322/Testcases.tar.gz",
     "testCaseRepositoryUrl": DEFAULT_TEST_CASE_REPOSITORY_URL,
     "testCaseLibraryPath": "../Phoebe-main/Testcases",
-    "pythonExecutablePath": "../python310/python.exe",
-    "runTestCasesPath": "../Phoebe-main/Testcases/run_testcase.py",
+    "idataExecutablePath": "../IDATA.exe",
     "autoLoadDevices": True,
     "deviceRefreshSeconds": 30,
     "tablePageSize": 20,
@@ -74,8 +73,7 @@ SETTING_FIELD_TYPES = {
     "testCaseArchiveUrl": str,
     "testCaseRepositoryUrl": str,
     "testCaseLibraryPath": str,
-    "pythonExecutablePath": str,
-    "runTestCasesPath": str,
+    "idataExecutablePath": str,
     "autoLoadDevices": bool,
     "deviceRefreshSeconds": int,
     "tablePageSize": int,
@@ -383,8 +381,6 @@ def install_test_case_archive(settings):
                 library.rename(target)
                 latest = read_settings()
                 latest["testCaseLibraryPath"] = str(target)
-                if (target / "run_testcase.py").is_file():
-                    latest["runTestCasesPath"] = str(target / "run_testcase.py")
                 write_settings(latest)
             except Exception:
                 if target.exists():
@@ -554,26 +550,23 @@ def start_test_cases_when_ready(request_body: dict) -> dict:
 
     settings = read_settings()
     raw_library_path = settings["testCaseLibraryPath"].strip()
-    raw_python_path = settings["pythonExecutablePath"].strip()
-    raw_runner_path = settings["runTestCasesPath"].strip()
+    raw_idata_path = settings["idataExecutablePath"].strip()
     if not raw_library_path:
         raise RuntimeError("Set the test case library path in Settings.")
-    if not raw_python_path:
-        raise RuntimeError("Set the Python executable path in Settings.")
-    if not raw_runner_path:
-        raise RuntimeError("Set the run_testcases path in Settings.")
+    if not raw_idata_path:
+        raise RuntimeError("Set the IDATA executable path in Settings.")
 
     library_path = configured_path(raw_library_path)
-    python_path = configured_path(raw_python_path)
-    runner_path = configured_path(raw_runner_path)
+    idata_path = configured_path(raw_idata_path)
+    runner_path = library_path / "run_testcase.py"
     if not library_path.is_dir():
         raise RuntimeError(f"Test case library directory was not found: {library_path}")
-    if not python_path.is_file():
-        raise RuntimeError(f"Python executable was not found: {python_path}")
-    if python_path.name.lower() != "python.exe":
-        raise RuntimeError("Python executable path must end with python.exe.")
+    if not idata_path.is_file():
+        raise RuntimeError(f"IDATA executable was not found: {idata_path}")
+    if os.name == "nt" and idata_path.name.lower() != "idata.exe":
+        raise RuntimeError("IDATA executable path must end with IDATA.exe.")
     if not runner_path.is_file():
-        raise RuntimeError(f"run_testcases file was not found: {runner_path}")
+        raise RuntimeError(f"run_testcase.py was not found in the test case library: {runner_path}")
 
     discovered_cases = {
         test_case["id"]: test_case
@@ -591,12 +584,13 @@ def start_test_cases_when_ready(request_body: dict) -> dict:
         test_case = discovered_cases[case_id]
         case_name = test_case.get("executionName", test_case["title"])
         test_command = build_test_command(
-            python_path, runner_path, case_name, inspection_mode, device
+            idata_path, runner_path, case_name, inspection_mode
         )
         log_path = TEST_RUN_LOG_DIRECTORY / f"{run_id}-{case_id}.log"
         status_path = TEST_RUN_LOG_DIRECTORY / f"{run_id}-{case_id}.status.json"
         command, popen_options = build_launch_command(
-            test_command, TEST_PROCESS_RUNNER, log_path, status_path, library_path
+            test_command, sys.executable, TEST_PROCESS_RUNNER, log_path, status_path,
+            library_path
         )
         display_command = subprocess.list2cmdline(test_command)
         processes.append(

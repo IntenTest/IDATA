@@ -197,12 +197,10 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Default owner": "默认负责人",
   "Test case library path": "测试用例库路径",
   "Test case repository URL": "测试用例库 URL",
-  "Python executable path": "Python 可执行文件路径",
-  "run_testcases path": "run_testcases 路径",
+  "IDATA executable path": "IDATA 可执行文件路径",
   "Include all .py files in this directory and its subdirectories.": "包含此目录及其所有子目录中的 .py 文件。",
   "Place the prepared test case package in this directory.": "请将预制好的测试用例包放在此目录。",
-  "Use the Python executable on the selected PC.": "必须指向 python.exe 文件。",
-  "The Python runner that receives the selected case name and inspection mode.": "接收所选用例名称和检查模式的 Python 运行程序。",
+  "Defaults to IDATA.exe next to the client executable.": "默认为客户端可执行文件同目录下的 IDATA.exe。",
   "Auto-load devices": "自动加载设备",
   "Refresh interval": "刷新间隔",
   "Table page size": "表格每页数量",
@@ -647,8 +645,7 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
   testCaseRepositoryUrl: "https://codehub-dg-y.huawei.com/k30030842/Testcases.git",
   testCaseArchiveUrl: "http://10.90.65.189:54322/Testcases.tar.gz",
   testCaseLibraryPath: "../Phoebe-main/Testcases",
-  pythonExecutablePath: "../python310/python.exe",
-  runTestCasesPath: "../Phoebe-main/Testcases/run_testcase.py",
+  idataExecutablePath: "../IDATA.exe",
   autoLoadDevices: true,
   deviceRefreshSeconds: 30,
   tablePageSize: 20,
@@ -3482,26 +3479,14 @@ const App = {
                 </el-form-item>
                 <el-form-item
                   class="settings-path-field"
-                  :label="t('Python executable path')"
+                  :label="t('IDATA executable path')"
                 >
                   <el-input
-                    v-model="appSettings.pythonExecutablePath"
-                    placeholder="C:\\path\\to\\python.exe"
+                    v-model="appSettings.idataExecutablePath"
+                    placeholder="C:\\path\\to\\IDATA.exe"
                   />
                   <span class="settings-field-help">
-                    {{ t('Use the Python executable on the selected PC.') }}
-                  </span>
-                </el-form-item>
-                <el-form-item
-                  class="settings-path-field"
-                  :label="t('run_testcases path')"
-                >
-                  <el-input
-                    v-model="appSettings.runTestCasesPath"
-                    placeholder="C:\\path\\to\\run_testcases.py"
-                  />
-                  <span class="settings-field-help">
-                    {{ t('The Python runner that receives the selected case name and inspection mode.') }}
+                    {{ t('Defaults to IDATA.exe next to the client executable.') }}
                   </span>
                 </el-form-item>
                 <el-form-item :label="t('Refresh interval')">

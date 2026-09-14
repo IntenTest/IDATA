@@ -33,8 +33,8 @@ required at runtime.
 
 `test_commands.py` centralizes commands used when creating a test run:
 
-- `build_test_command`: Python executable, runner, test case, inspection mode, and device arguments.
-- `build_launch_command`: persistent log/status wrapper and working directory.
+- `build_test_command`: IDATA CLI bundle command, runner, test case, and inspection mode.
+- `build_launch_command`: Python log/status wrapper and working directory.
 - `build_windows_command`: Windows `cmd.exe`, UTF-8 setup, and console lifetime (`/k`).
 
 Edit this file on the execution PC and restart the local execution service to

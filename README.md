@@ -42,8 +42,9 @@ buttons remain available for existing terminal-only installations.
 Configure **Settings** using paths on the execution PC:
 
 - Test case library containing the original mapping CSV and test files.
-- Python interpreter used by the tests (`python.exe` on Windows).
-- Original `run_testcase.py` runner.
+- `IDATA.exe` used to run CLI bundles. It defaults to the copy beside the client
+  executable.
+- Test case library containing `run_testcase.py` at its root.
 
 Install the original test runtime, HDC, device drivers, and model dependencies on
 that PC. They are not included in the three source repositories. Model settings
@@ -123,8 +124,8 @@ Both a top-level Testcases directory and a flat archive are supported. Links and
 unsafe archive paths are rejected. Downloads time out after ten minutes, with a
 2 GiB download limit and 4 GiB extracted-file limit.
 
-The library path is saved automatically; an included `run_testcase.py` also updates
-the runner path. The page displays progress and reloads cases through the client.
+The library path is saved automatically. Test runs always use `run_testcase.py`
+from the root of that library. The page displays progress and reloads cases through the client.
 If the browser closes, the update continues on the PC; click Update again while
 it is running to resume watching. Client or worker shutdown interrupts the update.
 Deploy the updated server, client executable, and Python worker together.
