@@ -1,6 +1,120 @@
-# Configurable URL deployment
+# IDATA Linux 服务器重新部署（v0.2.13）
 
-## Address precedence
+本文用于在 Ubuntu x86-64 服务器上首次安装或升级 IDATA Server。
+重新部署会保留现有的监听地址、Token 和已批准的设备凭据。
+
+## 1. 需要下载的文件
+
+推荐只下载以下两个文件：
+
+1. [`IDATA-ubuntu-v0.2.13.tar.gz`](https://github.com/IntenTest/IDATA/releases/download/v0.2.13/IDATA-ubuntu-v0.2.13.tar.gz)
+   —— Ubuntu 完整部署包，内含 Linux Server、部署脚本、本文档和包内校验文件。
+2. [`SHA256SUMS`](https://github.com/IntenTest/IDATA/releases/download/v0.2.13/SHA256SUMS)
+   ——用于校验下载的 `.tar.gz` 是否完整。
+
+Linux 服务器不需要下载 `idata-client-windows-amd64.exe`；该文件只用于
+Windows 执行电脑。
+
+如果 Ubuntu 服务器可以访问 GitHub，直接执行：
+
+```bash
+mkdir -p "$HOME/idata-release-v0.2.13"
+cd "$HOME/idata-release-v0.2.13"
+curl --fail --location --remote-name \
+  https://github.com/IntenTest/IDATA/releases/download/v0.2.13/IDATA-ubuntu-v0.2.13.tar.gz
+curl --fail --location --remote-name \
+  https://github.com/IntenTest/IDATA/releases/download/v0.2.13/SHA256SUMS
+```
+
+如果服务器不能访问 GitHub，先在可联网电脑上下载上述两个文件，再通过
+SCP、SFTP 或内网文件传输工具将它们放到 Ubuntu 服务器的同一目录。
+
+## 2. 校验并解压部署包
+
+进入两个下载文件所在的目录，执行：
+
+```bash
+grep ' IDATA-ubuntu-v0.2.13.tar.gz$' SHA256SUMS | sha256sum --check -
+tar -xzf IDATA-ubuntu-v0.2.13.tar.gz
+cd IDATA-ubuntu-v0.2.13
+sha256sum --check SHA256SUMS
+```
+
+上述校验应全部显示 `OK`。如果出现 `FAILED` 或找不到文件，请重新下载，
+不要继续部署。
+
+## 3. 执行安装或升级
+
+使用默认配置部署：
+
+```bash
+sudo bash deploy-ubuntu.sh
+```
+
+脚本会自动完成备份、替换程序、重启 systemd 服务和健康检查。升级时会保留
+`IDATA_LISTEN_ADDR`、管理 Token 和 `/var/lib/idata` 下的设备凭据。首次安装
+默认监听 `:12345`。
+
+如果 Nginx 通过回环地址访问 IDATA Server，并需要使用 `X-Real-IP` 区分执行
+电脑，首次配置时执行：
+
+```bash
+sudo env IDATA_DEPLOY_TRUSTED_PROXIES=127.0.0.1,::1 bash deploy-ubuntu.sh
+```
+
+如果 Nginx 使用服务器内网 IP 连接后端，还需将该 IP 加入列表，例如：
+
+```bash
+sudo env IDATA_DEPLOY_TRUSTED_PROXIES=127.0.0.1,::1,10.90.65.189 \
+  bash deploy-ubuntu.sh
+```
+
+## 4. 验证部署结果
+
+```bash
+sudo systemctl status idata-server --no-pager
+curl --fail --silent --show-error http://127.0.0.1:12345/healthz
+```
+
+默认端口的健康检查应返回：
+
+```json
+{"status":"ok"}
+```
+
+如果原服务使用的不是 `12345` 端口，请将命令中的端口替换为
+`/etc/idata/idata-server.env` 里 `IDATA_LISTEN_ADDR` 的实际端口。最后再访问对外的
+IDATA 网址，确认页面、Windows Client 连接和设备列表都正常。
+
+## 5. 失败排查和恢复
+
+查看最近日志：
+
+```bash
+sudo journalctl -u idata-server -n 100 --no-pager
+```
+
+如果新服务无法启动或健康检查失败，部署脚本会自动恢复上一版程序、
+配置和 systemd 服务。脚本结束时会输出备份目录，请保留该目录直到确认
+新版运行稳定。
+
+## 6. 不使用整包时需要的文件
+
+仅在无法使用 `.tar.gz` 整包时，才分别下载以下三个文件，并放在同一
+目录：
+
+- `idata-server-linux-amd64`
+- `deploy-ubuntu.sh`
+- `SHA256SUMS`
+
+然后在该目录执行：
+
+```bash
+chmod 0755 deploy-ubuntu.sh
+sudo bash deploy-ubuntu.sh
+```
+
+## 高级网络配置
 
 The browser launch link uses the page's current scheme, hostname, effective port,
 and deployment prefix. It never uses a baked-in public server address. Page query
@@ -18,27 +132,6 @@ no IP-specific port detection. Bare hosts use HTTP port 80 unless they match a
 previously configured endpoint. Use a full URL to choose TLS, a port, or a prefix.
 The fixed local execution and launcher loopback ports are unrelated to the public
 server URL and remain unchanged.
-
-## Upgrade
-
-Upgrade both the Windows Client and Linux server for this release. Keep Client
-JSON configuration, tokens, and server device credentials. Exit the old Windows
-Client, replace its EXE, and start it once to register the new executable location.
-The EXE includes its offline execution runtime.
-
-Copy the Linux archive to Ubuntu, extract it, verify SHA256SUMS, then run:
-
-    sudo bash deploy-ubuntu.sh
-
-The installer preserves IDATA_LISTEN_ADDR on upgrades. First installation defaults
-to :12345 on any host. To explicitly choose another listener:
-
-    sudo env IDATA_DEPLOY_LISTEN_ADDR=127.0.0.1:18080 bash deploy-ubuntu.sh
-
-Existing configuration and credentials are backed up; service/health failures
-restore the previous deployment. The backend can also be started directly with
---listen or configured using IDATA_LISTEN_ADDR. Public and upstream ports do not
-need to match. Restrict the upstream listener to the intended network/proxy.
 
 ## Nginx root deployment
 
