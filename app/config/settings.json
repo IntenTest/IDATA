@@ -5,7 +5,7 @@
   "defaultOwner": "kouyanan 30030842",
   "testCaseRepositoryUrl": "https://github.com/IntenTest/Testcases.git",
   "testCaseLibraryPath": "../Phoebe-main/Testcases",
-  "idataExecutablePath": "../IDATA.exe",
+  "idataExecutablePath": "IDATA.exe",
   "autoLoadDevices": true,
   "deviceRefreshSeconds": 30,
   "tablePageSize": 20

@@ -12,11 +12,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
 
-const healthURL = "http://127.0.0.1:54321/api/settings"
+const (
+	healthURL                                    = "http://127.0.0.1:54321/api/settings"
+	clientExecutableDirectoryEnvironmentVariable = "IDATA_CLIENT_EXECUTABLE_DIRECTORY"
+)
 
 type Config struct {
 	ScriptPath       string
@@ -54,6 +58,11 @@ func ensure(lifetime, startup context.Context, config Config) (func(), error) {
 	}
 	command := exec.Command(python, "-u", script)
 	command.Dir = filepath.Dir(script)
+	clientExecutable, err := os.Executable()
+	if err != nil {
+		return func() {}, fmt.Errorf("locate IDATA Client executable: %w", err)
+	}
+	command.Env = workerEnvironment(os.Environ(), filepath.Dir(clientExecutable))
 	command.Stdout, command.Stderr = config.Output, config.Output
 	configureHiddenProcess(command)
 	if err := command.Start(); err != nil {
@@ -106,6 +115,19 @@ func ensure(lifetime, startup context.Context, config Config) (func(), error) {
 		case <-ticker.C:
 		}
 	}
+}
+
+func workerEnvironment(environment []string, clientExecutableDirectory string) []string {
+	prefix := clientExecutableDirectoryEnvironmentVariable + "="
+	result := make([]string, 0, len(environment)+1)
+	for _, entry := range environment {
+		key, _, found := strings.Cut(entry, "=")
+		if found && strings.EqualFold(key, clientExecutableDirectoryEnvironmentVariable) {
+			continue
+		}
+		result = append(result, entry)
+	}
+	return append(result, prefix+clientExecutableDirectory)
 }
 
 func serviceAvailable(ctx context.Context) bool {

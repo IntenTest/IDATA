@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -31,6 +32,27 @@ func TestLocateConfiguredScript(t *testing.T) {
 func TestLocateMissingConfiguredScript(t *testing.T) {
 	if _, err := locateScript(filepath.Join(t.TempDir(), "missing.py")); err == nil {
 		t.Fatal("locateScript accepted a missing configured script")
+	}
+}
+
+func TestWorkerEnvironmentUsesClientExecutableDirectory(t *testing.T) {
+	environment := workerEnvironment(
+		[]string{"PATH=/usr/bin", "idata_client_executable_directory=old"},
+		`C:\Program Files\IDATA`,
+	)
+	want := clientExecutableDirectoryEnvironmentVariable + `=C:\Program Files\IDATA`
+	count := 0
+	for _, entry := range environment {
+		key, _, found := strings.Cut(entry, "=")
+		if found && strings.EqualFold(key, clientExecutableDirectoryEnvironmentVariable) {
+			count++
+			if entry != want {
+				t.Fatalf("client executable directory = %q, want %q", entry, want)
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("client executable directory variable count = %d, want 1", count)
 	}
 }
 

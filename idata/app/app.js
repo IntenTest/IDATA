@@ -645,7 +645,7 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
   testCaseRepositoryUrl: "https://codehub-dg-y.huawei.com/k30030842/Testcases.git",
   testCaseArchiveUrl: "http://10.90.65.189:54322/Testcases.tar.gz",
   testCaseLibraryPath: "../Phoebe-main/Testcases",
-  idataExecutablePath: "../IDATA.exe",
+  idataExecutablePath: "IDATA.exe",
   autoLoadDevices: true,
   deviceRefreshSeconds: 30,
   tablePageSize: 20,

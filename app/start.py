@@ -39,6 +39,9 @@ MODEL_CONFIG_PATH = (
 DEFAULT_MODEL_NAME = "Qwen3.8-27B-Q4"
 DEFAULT_MODEL_API_KEY = ""
 MODEL_API_KEY_ENVIRONMENT_VARIABLE = "IDATA_MODEL_API_KEY"
+IDATA_CLIENT_EXECUTABLE_DIRECTORY_ENVIRONMENT_VARIABLE = (
+    "IDATA_CLIENT_EXECUTABLE_DIRECTORY"
+)
 PID_PATH = APP_DIRECTORY / ".idata.pid"
 VENDOR_PACKAGES = frozenset(("vue-3.5.24", "element-plus-2.11.8"))
 HDC_TIMEOUT_SECONDS = 10
@@ -60,7 +63,7 @@ DEFAULT_SETTINGS = {
     "testCaseArchiveUrl": "http://10.90.65.189:54322/Testcases.tar.gz",
     "testCaseRepositoryUrl": DEFAULT_TEST_CASE_REPOSITORY_URL,
     "testCaseLibraryPath": "../Phoebe-main/Testcases",
-    "idataExecutablePath": "../IDATA.exe",
+    "idataExecutablePath": "IDATA.exe",
     "autoLoadDevices": True,
     "deviceRefreshSeconds": 30,
     "tablePageSize": 20,
@@ -188,6 +191,8 @@ def normalize_settings(raw_settings: dict) -> dict:
         elif not isinstance(value, expected_type):
             raise RuntimeError(f"{key} must be a string.")
         settings[key] = value
+    if settings["idataExecutablePath"].replace("\\", "/").lower() == "../idata.exe":
+        settings["idataExecutablePath"] = "IDATA.exe"
     return settings
 
 
@@ -295,6 +300,24 @@ def configured_path(raw_path: str) -> Path:
     if not path.is_absolute():
         path = PROJECT_DIRECTORY / path
     return path.resolve()
+
+
+def configured_idata_path(raw_path: str) -> Path:
+    path = Path(raw_path).expanduser()
+    if path.is_absolute():
+        return path.resolve()
+
+    client_directory = os.environ.get(
+        IDATA_CLIENT_EXECUTABLE_DIRECTORY_ENVIRONMENT_VARIABLE, ""
+    ).strip()
+    if client_directory:
+        # v0.2.13 stored this legacy relative default. It also means the copy
+        # beside the Client, not a path relative to the extracted AppData runtime.
+        if raw_path.replace("\\", "/").lower() == "../idata.exe":
+            path = Path("IDATA.exe")
+        return (Path(client_directory) / path).resolve()
+
+    return configured_path(raw_path)
 
 
 def detect_network_zone() -> str:
@@ -557,7 +580,7 @@ def start_test_cases_when_ready(request_body: dict) -> dict:
         raise RuntimeError("Set the IDATA executable path in Settings.")
 
     library_path = configured_path(raw_library_path)
-    idata_path = configured_path(raw_idata_path)
+    idata_path = configured_idata_path(raw_idata_path)
     runner_path = library_path / "run_testcase.py"
     if not library_path.is_dir():
         raise RuntimeError(f"Test case library directory was not found: {library_path}")

@@ -12,6 +12,22 @@ spec.loader.exec_module(worker)
 
 
 class ArchiveUpdateTests(unittest.TestCase):
+    def test_idata_executable_defaults_to_client_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            client_directory = Path(temporary) / 'installed client'
+            environment = {
+                worker.IDATA_CLIENT_EXECUTABLE_DIRECTORY_ENVIRONMENT_VARIABLE:
+                    str(client_directory),
+            }
+            with patch.dict(worker.os.environ, environment):
+                expected = (client_directory / 'IDATA.exe').resolve()
+                self.assertEqual(worker.configured_idata_path('IDATA.exe'), expected)
+                self.assertEqual(worker.configured_idata_path('../IDATA.exe'), expected)
+
+    def test_legacy_idata_default_is_migrated(self):
+        settings = worker.normalize_settings({'idataExecutablePath': '../IDATA.exe'})
+        self.assertEqual(settings['idataExecutablePath'], 'IDATA.exe')
+
     def test_install_and_failed_update_preserves_library(self):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
