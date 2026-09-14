@@ -168,13 +168,15 @@ class HealthCheckTest(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            code = SCRIPT.read_text().split("timeout 2 bash -c '", 1)[1].split("' 2>/dev/null", 1)[0]
-            code = code.replace('/12345', '/' + str(server.server_port))
+            code = SCRIPT.read_text().split("timeout 2 bash -c '", 1)[1].split("\n    ' bash ", 1)[0]
             for status, body, expected in ((200, b'{"status":"ok"}', 0),
                                            (500, b'{"status":"ok"}', 1),
                                            (200, b'wrong service', 1)):
                 Handler.status, Handler.body = status, body
-                result = subprocess.run(['bash', '-c', code], timeout=3)
+                result = subprocess.run(
+                    ['bash', '-c', code, 'bash', '127.0.0.1', str(server.server_port)],
+                    timeout=3,
+                )
                 self.assertEqual(result.returncode, expected)
         finally:
             server.shutdown()
