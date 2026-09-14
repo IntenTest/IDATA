@@ -77,7 +77,7 @@ func testDomainProxy(t *testing.T, origin, prefix string) {
 		t.Fatal(err)
 	}
 	defer agent.Close()
-	if err := agent.WriteJSON(protocol.Message{Type: protocol.TypeHello, ProtocolVersion: protocol.Version, ClientID: "domain-pc", OS: "windows", DeviceTokenHash: hashDeviceToken(testDeviceToken), Capabilities: []string{"idata_api_v1", "terminal_v1"}}); err != nil {
+	if err := agent.WriteJSON(protocol.Message{Type: protocol.TypeHello, ProtocolVersion: protocol.Version, ClientID: "domain-pc", OS: "windows", DeviceTokenHash: hashDeviceToken(testDeviceToken), Capabilities: []string{"server_commands_v1", "terminal_v1"}}); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(time.Second)
@@ -123,11 +123,11 @@ func testDomainProxy(t *testing.T, origin, prefix string) {
 			done <- err
 			return
 		}
-		if message.Type != protocol.TypeAPIRequest || message.Path != "/api/settings" {
+		if message.Type != protocol.TypeCommand || !strings.Contains(message.Command, "settings") {
 			done <- io.ErrUnexpectedEOF
 			return
 		}
-		done <- agent.WriteJSON(protocol.Message{Type: protocol.TypeAPIResponse, ProtocolVersion: protocol.Version, RequestID: message.RequestID, Status: 200, Data: []byte(`{"settings":{}}`)})
+		done <- agent.WriteJSON(protocol.Message{Type: protocol.TypeResult, ProtocolVersion: protocol.Version, RequestID: message.RequestID, ExitCode: 0, Stdout: `{"ok":true,"data":{"settings":{}}}`})
 	}()
 	request, _ = http.NewRequest("GET", publicURL+"/api/v1/clients/domain-pc/idata/settings", nil)
 	request.AddCookie(cookie)

@@ -22,23 +22,22 @@ import (
 	"idata-client/internal/terminal"
 )
 
-const Version = "0.7.11"
+const Version = "0.7.12"
 
 var ErrAuthenticationRejected = errors.New("agent authentication rejected")
 
 var pairingChallengePattern = regexp.MustCompile(`^PAIR IDATA [A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$`)
 
 type Config struct {
-	ServerURL              string
-	AgentToken             string
-	ClientID               string
-	Hostname               string
-	DeviceToken            string
-	OutputLimit            int64
-	PairingApprover        func(context.Context, pairingprompt.Request) (bool, error)
-	ConnectionState        func(bool)
-	Retrying               func(error, time.Duration)
-	EnsureExecutionService func(context.Context) error
+	ServerURL       string
+	AgentToken      string
+	ClientID        string
+	Hostname        string
+	DeviceToken     string
+	OutputLimit     int64
+	PairingApprover func(context.Context, pairingprompt.Request) (bool, error)
+	ConnectionState func(bool)
+	Retrying        func(error, time.Duration)
 }
 
 type Agent struct {
@@ -128,7 +127,7 @@ func (a *Agent) connectAndServe(parent context.Context) error {
 	}()
 	defer close(connectionDone)
 
-	capabilities := []string{"terminal_v1", "idata_api_v1"}
+	capabilities := []string{"terminal_v1", "server_commands_v1"}
 	if a.config.PairingApprover != nil {
 		capabilities = append(capabilities, "browser_pairing_v1")
 	}
@@ -198,22 +197,6 @@ func (a *Agent) connectAndServe(parent context.Context) error {
 			continue
 		}
 		switch message.Type {
-		case protocol.TypeAPIRequest:
-			select {
-			case semaphore <- struct{}{}:
-				commands.Add(1)
-				go func(request protocol.Message) {
-					defer commands.Done()
-					defer func() { <-semaphore }()
-					result := forwardIDATAWithService(ctx, request, a.config.EnsureExecutionService)
-					if ctx.Err() == nil {
-						_ = writeJSON(conn, &writeMu, result)
-					}
-				}(message)
-			default:
-				_ = writeJSON(conn, &writeMu, protocol.Message{Type: protocol.TypeAPIResponse, ProtocolVersion: protocol.Version, RequestID: message.RequestID, Status: 503, Error: "Local PC is busy. Please retry."})
-			}
-			continue
 		case protocol.TypePairingRequest:
 			a.handlePairingRequest(ctx, conn, &writeMu, &commands, pairingSemaphore, message)
 			continue
@@ -248,7 +231,7 @@ func (a *Agent) connectAndServe(parent context.Context) error {
 		if message.RequestID == "" {
 			continue
 		}
-		if message.TimeoutSeconds <= 0 || message.TimeoutSeconds > 24*60*60 || len(message.Command) > 32<<10 {
+		if message.TimeoutSeconds <= 0 || message.TimeoutSeconds > 24*60*60 || len(message.Command) > 128<<10 {
 			result := protocol.Message{
 				Type: protocol.TypeResult, ProtocolVersion: protocol.Version, RequestID: message.RequestID,
 				ExitCode: -1, Error: "invalid command request",

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -68,7 +69,7 @@ func TestTwoPCsBehindNginxRouteOnlyToTheirOwnClient(t *testing.T) {
 		}
 		computer.socket = socket
 		computer.done = make(chan struct{})
-		if err := socket.WriteJSON(protocol.Message{Type: protocol.TypeHello, ProtocolVersion: protocol.Version, ClientID: computer.id, OS: "windows", Capabilities: []string{"idata_api_v1", "terminal_v1"}}); err != nil {
+		if err := socket.WriteJSON(protocol.Message{Type: protocol.TypeHello, ProtocolVersion: protocol.Version, ClientID: computer.id, OS: "windows", Capabilities: []string{"server_commands_v1", "terminal_v1"}}); err != nil {
 			t.Fatal(err)
 		}
 		go func(computer *pc) {
@@ -78,12 +79,15 @@ func TestTwoPCsBehindNginxRouteOnlyToTheirOwnClient(t *testing.T) {
 				if err := computer.socket.ReadJSON(&message); err != nil {
 					return
 				}
-				if message.Type != protocol.TypeAPIRequest {
+				if message.Type != protocol.TypeCommand {
 					return
 				}
 				computer.calls.Add(1)
-				result := []byte(fmt.Sprintf(`{"pc":%q}`, computer.id))
-				if err := computer.socket.WriteJSON(protocol.Message{Type: protocol.TypeAPIResponse, ProtocolVersion: protocol.Version, RequestID: message.RequestID, Status: 200, Data: result}); err != nil {
+				result := fmt.Sprintf(`{"ok":true,"data":{"pc":%q}}`, computer.id)
+				if strings.Contains(message.Command, "/content") {
+					result = fmt.Sprintf(`{"ok":true,"data":{"contentBase64":%q}}`, base64.StdEncoding.EncodeToString([]byte(computer.id)))
+				}
+				if err := computer.socket.WriteJSON(protocol.Message{Type: protocol.TypeResult, ProtocolVersion: protocol.Version, RequestID: message.RequestID, ExitCode: 0, Stdout: result}); err != nil {
 					return
 				}
 			}
@@ -114,7 +118,7 @@ func TestTwoPCsBehindNginxRouteOnlyToTheirOwnClient(t *testing.T) {
 		if resp.StatusCode != 200 || len(self.Clients) != 1 || self.Clients[0].ID != computer.id || self.Clients[0].RemoteAddress != "" {
 			t.Fatalf("%s saw incorrect devices: %s", computer.id, data)
 		}
-		for _, operation := range []struct{ method, path string }{{"GET", "devices"}, {"POST", "test-runs"}, {"GET", "test-runs/run/reports/case/content"}} {
+		for _, operation := range []struct{ method, path string }{{"GET", "devices"}, {"POST", "test-runs"}, {"GET", "test-runs/TR-1/reports/1/content"}} {
 			resp, data = request(computer, operation.method, "/api/v1/clients/"+computer.id+"/idata/"+operation.path)
 			if resp.StatusCode != 200 || !strings.Contains(string(data), computer.id) {
 				t.Fatalf("%s operation routed incorrectly: %s", computer.id, data)

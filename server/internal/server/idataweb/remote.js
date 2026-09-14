@@ -118,7 +118,7 @@
         const clients = result.clients || [];
         const selected = clients.length === 1 ? clients[0] : null;
         if (!selected) throw new Error("No IDATA execution client is available.");
-        if (!(selected.capabilities || []).includes("idata_api_v1")) {
+        if (!(selected.capabilities || []).includes("server_commands_v1")) {
           throw new Error("Update and restart the IDATA Client on this computer.");
         }
         setConnected(selected.id);

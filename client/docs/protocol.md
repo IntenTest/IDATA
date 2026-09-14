@@ -3,11 +3,10 @@
 Protocol version 1 retains the upstream hello, command/result, terminal, enrollment,
 and browser-session behavior. Agent and administrator credentials remain separate.
 
-The combined client advertises `idata_api_v1` in hello. An authenticated server can
-send `idata_api_request` with a unique `request_id`, `method`, `path`, and base64
-`data`. The client invokes the local IDATA execution service at the fixed numeric
-loopback address `127.0.0.1:54321`. That service constructs and executes the original
-IDATA commands on the PC. The remote server never runs test subprocesses.
+The Client advertises `server_commands_v1` in hello. It has no built-in IDATA API,
+update workflow, test command builder, worker service, or Python runtime. The Server
+turns each web operation into a normal `command` request. The Client executes that
+command with the generic shell executor and returns the matching `result`.
 
 Allowed operations:
 
@@ -18,15 +17,15 @@ Allowed operations:
 - GET /api/test-runs/{run}/reports/{case}/content (remote report viewing)
 - PUT /api/settings, /api/model-config
 
-Arbitrary URLs, query parameters, static-file paths, and other methods are rejected.
-The client allows four concurrent operations, requests up to 64 KiB, responses up to
-8 MiB, and a 30-second request deadline. Redirects and HTTP proxies are disabled.
+Arbitrary URLs, query parameters, static-file paths, and other methods are rejected
+by the Server before command generation. The Client allows four concurrent commands,
+commands up to 128 KiB, and enforces the supplied timeout and output limit.
 Long-running tests return after launch and are polled separately. Disconnecting the
 browser does not cancel a test; the explicit close operation does. If launch status
 is uncertain after a connection failure, inspect test runs before retrying.
 
-The client returns `idata_api_response` with the matching request ID, HTTP `status`,
-`content_type`, base64 `data`, or `error`. Writers use the existing WebSocket lock.
+The Client returns `result` with the matching request ID, exit code, stdout, stderr,
+duration, truncation flags, timeout state, or executor error. Writers use the existing WebSocket lock.
 Disconnected server connections release pending requests. Older clients keep their
 terminal/command support but return a capability error for the new workspace.
 
@@ -40,9 +39,11 @@ sandboxed and cannot run scripts against the control origin.
 
 Test case archives: POST /api/test-cases/update starts or rejoins a background update;
 GET /api/test-cases/update returns idle/running/complete/failed and a message.
-The worker downloads the saved testCaseArchiveUrl on the execution PC, validates
+The Server-owned worker downloads the saved testCaseArchiveUrl on the execution PC with `curl.exe`, validates
 UTF-8 archive paths and the mapping CSV, replaces ~/.idata/newest_testcases, and
-saves the new library path. Request deadlines remain unchanged.
+saves the new library path. The Server also constructs every
+`IDATA.exe cli bundle run --path ...` test command and sends it through the same
+generic command channel.
 
 Browser launch accepts `idata://connect?server=HOST&port=PORT&secure=0|1`.
 HOST may be an ASCII DNS name, IPv4, or IPv6; PORT is mandatory in 1..65535.

@@ -3,8 +3,6 @@ package protocol
 const Version = 1
 
 const (
-	TypeAPIRequest     = "idata_api_request"
-	TypeAPIResponse    = "idata_api_response"
 	TypeHello          = "hello"
 	TypeCommand        = "command"
 	TypeResult         = "result"
@@ -20,10 +18,6 @@ const (
 )
 
 type Message struct {
-	Method          string   `json:"method,omitempty"`
-	Path            string   `json:"path,omitempty"`
-	Status          int      `json:"status,omitempty"`
-	ContentType     string   `json:"content_type,omitempty"`
 	Type            string   `json:"type"`
 	ProtocolVersion int      `json:"protocol_version"`
 	RequestID       string   `json:"request_id,omitempty"`

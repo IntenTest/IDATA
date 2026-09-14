@@ -25,7 +25,6 @@ import (
 	"idata-client/internal/agent"
 	"idata-client/internal/browserbridge"
 	"idata-client/internal/enrollment"
-	"idata-client/internal/executionservice"
 	"idata-client/internal/pairingprompt"
 	"idata-client/internal/urlprotocol"
 )
@@ -108,18 +107,11 @@ func run(logger *slog.Logger, logFile *os.File) error {
 	hostname := identity.Hostname
 	serverURL := flag.String("server", envOr("IDATA_SERVER_URL", valueOr(fileConfig.ServerURL, defaultServerURL)), "WebSocket server URL")
 	clientID := flag.String("id", envOr("IDATA_CLIENT_ID", valueOr(fileConfig.ClientID, hostname)), "stable client ID")
-	outputLimit := flag.Int64("output-limit", envInt64("IDATA_OUTPUT_LIMIT", positiveOr(fileConfig.OutputLimit, 1<<20)), "maximum bytes captured per output stream")
+	outputLimit := flag.Int64("output-limit", envInt64("IDATA_OUTPUT_LIMIT", positiveOr(fileConfig.OutputLimit, 9<<20)), "maximum bytes captured per output stream")
 	allowInsecure := flag.Bool("allow-insecure", envBool("IDATA_ALLOW_INSECURE", boolOr(fileConfig.AllowInsecure, true)), "allow unencrypted ws:// outside localhost")
 	browserBridgeAddress := flag.String("browser-bridge", envOr("IDATA_BROWSER_BRIDGE_ADDR", valueOr(fileConfig.BrowserBridgeAddress, defaultBrowserBridgeAddress)), "loopback browser pairing and launcher handoff address, or off")
 	confirmBrowserPairing := flag.Bool("confirm-browser-pairing", envBool("IDATA_CONFIRM_BROWSER_PAIRING", boolOr(fileConfig.ConfirmBrowserPairing, false)), "show a legacy local confirmation window for v0.4 browser pairing requests")
 	registerURLProtocol := flag.Bool("register-url-protocol", envBool("IDATA_REGISTER_URL_PROTOCOL", boolOr(fileConfig.RegisterURLProtocol, true)), "register the idata:// browser launcher for the current Windows user")
-	executionScript := flag.String("execution-script", envOr("IDATA_EXECUTION_SCRIPT", fileConfig.ExecutionScript), "path to the local IDATA execution service start.py")
-	storedPython := fileConfig.PythonExecutable
-	// Migrate the old implicit PATH default.
-	if storedPython == "python" {
-		storedPython = ""
-	}
-	pythonExecutable := flag.String("python", envOr("IDATA_PYTHON_EXECUTABLE", storedPython), "Python executable used for the local IDATA execution service")
 	unregisterURLProtocol := flag.Bool("unregister-url-protocol", false, "remove the idata:// browser launcher for the current Windows user and exit")
 	browserLogin := flag.Bool("browser-login", false, "start from an idata:// browser login link")
 	flag.Parse()
@@ -188,11 +180,13 @@ func run(logger *slog.Logger, logFile *os.File) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	worker := executionservice.NewManager(ctx, executionservice.Config{
-		ScriptPath: *executionScript, PythonExecutable: *pythonExecutable,
-		Output: logFile, Logger: logger,
-	})
-	defer worker.Close()
+	clientExecutable, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate client executable: %w", err)
+	}
+	if err := os.Setenv("IDATA_CLIENT_EXECUTABLE_DIRECTORY", filepath.Dir(clientExecutable)); err != nil {
+		return err
+	}
 	type connectionEvent struct {
 		generation int
 		kind       string
@@ -263,7 +257,6 @@ func run(logger *slog.Logger, logFile *os.File) error {
 		application, newErr := agent.New(agent.Config{
 			ServerURL: candidate, AgentToken: token, ClientID: *clientID, Hostname: hostname,
 			DeviceToken: deviceToken, OutputLimit: *outputLimit, PairingApprover: pairingApprover,
-			EnsureExecutionService: worker.Ensure,
 			ConnectionState: func(connected bool) {
 				kind := "disconnected"
 				if connected {
@@ -300,12 +293,7 @@ func run(logger *slog.Logger, logFile *os.File) error {
 	startConnection := func(action clientUIAction) {
 		stopConnection()
 		generation++ // Ignore completion events from the previous connection.
-		_ = ui.update(clientUIUpdate{State: "enrolling", Message: "Preparing the local execution service…"})
-		if err := worker.Ensure(ctx); err != nil {
-			logger.Error("local execution service unavailable", "error", err)
-			_ = ui.update(clientUIUpdate{State: "error", Message: "Local execution service could not start: " + err.Error()})
-			return
-		}
+		_ = ui.update(clientUIUpdate{State: "enrolling", Message: "正在连接服务器…"})
 		candidate, buildErr := serverURLFromInput(action.ServerIP, *serverURL)
 		if buildErr == nil {
 			buildErr = validateServerURL(candidate, *allowInsecure)
@@ -380,8 +368,6 @@ func run(logger *slog.Logger, logFile *os.File) error {
 			switch event.kind {
 			case "connected":
 				fileConfig.ServerURL = activeURL
-				fileConfig.ExecutionScript = *executionScript
-				fileConfig.PythonExecutable = *pythonExecutable
 				if err := saveFileConfig(fileConfig); err != nil {
 					logger.Warn("failed to remember server address", "error", err)
 				}
@@ -433,8 +419,6 @@ type clientFileConfig struct {
 	BrowserBridgeAddress  string `json:"browser_bridge_address,omitempty"`
 	ConfirmBrowserPairing *bool  `json:"confirm_browser_pairing,omitempty"`
 	RegisterURLProtocol   *bool  `json:"register_url_protocol,omitempty"`
-	ExecutionScript       string `json:"execution_script,omitempty"`
-	PythonExecutable      string `json:"python_executable,omitempty"`
 }
 
 func newDeviceToken() (string, error) {

@@ -1,0 +1,279 @@
+"""Server-owned IDATA operation executed by the generic remote command client."""
+
+import base64
+import csv
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+from datetime import datetime
+from pathlib import Path
+from urllib.parse import urlparse
+
+SERVER_WORKER_SOURCE = globals().get("SERVER_WORKER_SOURCE") or Path(__file__).read_bytes()
+STATE = Path.home() / ".idata" / "server-command-runtime"
+SETTINGS = STATE / "settings.json"
+RUNS = STATE / "runs"
+UPDATE_STATUS = STATE / "test-case-update.json"
+LIBRARY = Path.home() / ".idata" / "newest_testcases"
+DEFAULTS = {
+    "projectName": "IDATA", "releaseName": "FangTian 1.10-1.12",
+    "defaultEnvironment": "HarmonyOS", "defaultOwner": "kouyanan 30030842",
+    "testCaseArchiveUrl": "http://10.90.65.189:54322/Testcases.tar.gz",
+    "testCaseLibraryPath": str(LIBRARY), "idataExecutablePath": "IDATA.exe",
+    "autoLoadDevices": True, "deviceRefreshSeconds": 30, "tablePageSize": 20,
+}
+
+
+def atomic_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=path.parent) as output:
+        json.dump(value, output, ensure_ascii=False, indent=2)
+        output.write("\n")
+        temporary = output.name
+    Path(temporary).replace(path)
+
+
+def settings():
+    value = dict(DEFAULTS)
+    if SETTINGS.is_file():
+        loaded = json.loads(SETTINGS.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            value.update({key: loaded[key] for key in DEFAULTS if key in loaded})
+    return value
+
+
+def update_status(status=None, message=None):
+    if status is not None:
+        atomic_json(UPDATE_STATUS, {"status": status, "message": message or ""})
+    if UPDATE_STATUS.is_file():
+        return json.loads(UPDATE_STATUS.read_text(encoding="utf-8"))
+    return {"status": "idle", "message": "Ready to update the test case library."}
+
+
+def discover(current=None):
+    current = current or settings()
+    root = Path(current["testCaseLibraryPath"]).expanduser()
+    mapping_path = root / "中英文映射.csv"
+    if not mapping_path.is_file():
+        return {"testCases": [], "error": f"Test case mapping was not found: {mapping_path}"}
+    files = {path.stem: path for path in root.rglob("*.py") if path.name != "__init__.py"}
+    cases = []
+    with mapping_path.open(encoding="utf-8-sig", newline="") as source:
+        for row in csv.DictReader(source):
+            number = (row.get("用例_编号") or "").strip()
+            path = files.get(number)
+            if not number or path is None:
+                continue
+            cases.append({
+                "id": str(len(cases) + 1), "title": (row.get("用例_名称") or number).strip(),
+                "executionName": number, "path": path.relative_to(root).with_suffix("").as_posix(),
+                "moduleName": (row.get("模块_名称") or "").strip(),
+                "moduleCode": (row.get("模块_编号") or "").strip(),
+                "applicationName": (row.get("应用_名称") or "").strip(),
+                "applicationCode": (row.get("应用_编号") or "").strip(),
+                "updated": datetime.fromtimestamp(path.stat().st_mtime).astimezone().isoformat(timespec="seconds"),
+                "category": "Standard",
+            })
+    return {"testCases": cases, "mappingPath": str(mapping_path)}
+
+
+def install_archive(current):
+    url = current["testCaseArchiveUrl"].strip()
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+        raise RuntimeError("Set a valid HTTP or HTTPS test case archive URL in Settings.")
+    parent = LIBRARY.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".testcases-", dir=parent) as temporary:
+        stage = Path(temporary)
+        archive_path = stage / "Testcases.tar.gz"
+        update_status("running", "Downloading test case archive on the execution PC…")
+        command = ["curl.exe" if os.name == "nt" else "curl", "--fail", "--location", "--silent", "--show-error", "--connect-timeout", "30", "--max-time", "600", "--max-filesize", "2147483648", "--proto", "=http,https", "--proto-redir", "=http,https", "--output", str(archive_path), url]
+        result = subprocess.run(command, capture_output=True, timeout=620)
+        if result.returncode:
+            raise RuntimeError("Archive download failed. Check the URL and network connection.")
+        extracted = stage / "extracted"
+        update_status("running", "Extracting and validating test cases…")
+        extracted.mkdir()
+        with tarfile.open(archive_path, "r:gz", encoding="utf-8") as package:
+            total = 0
+            for count, member in enumerate(package, 1):
+                parts = member.name.replace("\\", "/").split("/")
+                if member.name.startswith(("/", "\\")) or ".." in parts or any(":" in part for part in parts) or not (member.isdir() or member.isfile()):
+                    raise RuntimeError("The archive contains an unsafe path or unsupported file type.")
+                total += member.size
+                if count > 100000 or total > 4 * 1024**3:
+                    raise RuntimeError("The extracted archive exceeds the supported size limit.")
+                destination = extracted.joinpath(*parts)
+                if member.isdir():
+                    destination.mkdir(parents=True, exist_ok=True)
+                else:
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    with package.extractfile(member) as source, destination.open("wb") as output:
+                        shutil.copyfileobj(source, output)
+        mappings = list(extracted.rglob("中英文映射.csv"))
+        if len(mappings) != 1:
+            raise RuntimeError("The archive must contain exactly one test case mapping CSV.")
+        source = mappings[0].parent
+        check = discover({**current, "testCaseLibraryPath": str(source)})
+        if not check["testCases"]:
+            raise RuntimeError("The archive contains no mapped test cases.")
+        backup = stage / "previous"
+        if LIBRARY.exists():
+            LIBRARY.rename(backup)
+        try:
+            source.rename(LIBRARY)
+        except Exception:
+            if LIBRARY.exists():
+                shutil.rmtree(LIBRARY)
+            if backup.exists():
+                backup.rename(LIBRARY)
+            raise
+    current["testCaseLibraryPath"] = str(LIBRARY)
+    atomic_json(SETTINGS, current)
+    return {"status": "complete", "message": "Test case library updated successfully."}
+
+
+def execute_update():
+    try:
+        result = install_archive(settings())
+        update_status(result["status"], result["message"])
+    except Exception as error:
+        update_status("failed", str(error))
+
+
+def idata_path(current):
+    raw = current["idataExecutablePath"].strip()
+    path = Path(raw).expanduser()
+    if path.is_absolute():
+        return path
+    directory = Path(os.environ.get("IDATA_CLIENT_EXECUTABLE_DIRECTORY", "."))
+    return (directory / ("IDATA.exe" if raw.replace("\\", "/").lower() == "../idata.exe" else raw)).resolve()
+
+
+def serialize_run(run):
+    processes = run["started"]
+    finished = [item for item in processes if item["result"] not in {"Pending", "Running"}]
+    failed = sum(item["result"] == "Failed" for item in finished)
+    interrupted = sum(item["result"] == "Interrupted" for item in finished)
+    return {**run, "status": "Running" if len(finished) < len(processes) else "Interrupted" if interrupted else "Failed" if failed else "Completed", "runningProcesses": len(processes) - len(finished), "totalProcesses": len(processes), "executedProcesses": len(finished), "passedProcesses": sum(item["result"] == "Passed" for item in finished), "failedProcesses": failed, "interruptedProcesses": interrupted, "progress": round(len(finished) / len(processes) * 100) if processes else 0, "consoleOutput": "\n\n".join(item.get("consoleOutput", "") for item in processes)}
+
+
+def run_path(run_id):
+    if not re.fullmatch(r"TR-[0-9]+", run_id):
+        raise RuntimeError("Invalid test run ID.")
+    return RUNS / f"{run_id}.json"
+
+
+def execute_run(run_id):
+    path = run_path(run_id)
+    run = json.loads(path.read_text(encoding="utf-8"))
+    for item in run["started"]:
+        latest = json.loads(path.read_text(encoding="utf-8"))
+        if latest.get("stopRequested"):
+            item.update(result="Interrupted", exitCode=None, interruptionMessage="The test run was closed manually.")
+            atomic_json(path, run)
+            continue
+        item["result"] = "Running"
+        atomic_json(path, run)
+        command = item.pop("executionCommand")
+        result = subprocess.run(command, cwd=run["libraryPath"], capture_output=True, text=True, errors="replace")
+        output = (result.stdout or "") + (result.stderr or "")
+        item.update(result="Passed" if result.returncode == 0 else "Failed", exitCode=result.returncode, consoleOutput=output)
+        match = re.search(r"(?:report|report path|报告路径)\s*[:：]\s*(.+?\.html?)", output, re.I)
+        if match:
+            item["reportLocation"] = match.group(1).strip().strip('"')
+            item["reportUrl"] = "available"
+        atomic_json(path, run)
+
+
+def handle(operation, method, body):
+    current = settings()
+    if operation == "settings":
+        if method == "PUT":
+            incoming = body.get("settings", body)
+            current.update({key: incoming[key] for key in DEFAULTS if key in incoming})
+            atomic_json(SETTINGS, current)
+        return {"settings": current, "networkZone": "blue", "testCaseUpdateCommand": ""}
+    if operation == "model-config":
+        path = STATE / "model-config.json"
+        if method == "PUT":
+            atomic_json(path, body.get("modelConfig", body))
+        value = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {"api_base": "", "api_key": "", "model_name": ""}
+        return {"modelConfig": value}
+    if operation == "devices":
+        result = subprocess.run(["hdc", "list", "targets", "-v"], capture_output=True, text=True, timeout=10)
+        devices = [{"id": columns[0], "status": columns[2] if len(columns) > 2 else "Connected"} for line in result.stdout.splitlines() if (columns := line.split()) and columns[0].lower() not in {"empty", "[empty]"}]
+        return {"devices": devices, "error": None if result.returncode == 0 else (result.stderr.strip() or "HDC device search failed.")}
+    if operation == "test-cases":
+        return discover(current)
+    if operation == "test-cases/update":
+        status = update_status()
+        if method != "POST" or status.get("status") == "running":
+            return status
+        executable = idata_path(current)
+        if not executable.is_file():
+            raise RuntimeError("IDATA.exe was not found.")
+        update_status("running", "Preparing test case update…")
+        subprocess.Popen([str(executable), "cli", "bundle", "run", "--path", str(Path(__file__).resolve()), "--", "__execute_update"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+        return update_status()
+    if operation == "test-runs" and method == "POST":
+        selected = body.get("testCases")
+        mode = body.get("inspectionMode")
+        available = {item["id"]: item for item in discover(current)["testCases"]}
+        if not isinstance(selected, list) or not selected or mode not in (0, 1, 2):
+            raise RuntimeError("Select test cases and a valid inspection mode.")
+        root = Path(current["testCaseLibraryPath"])
+        executable = idata_path(current)
+        runner = root / "run_testcase.py"
+        if not executable.is_file() or not runner.is_file():
+            raise RuntimeError("IDATA.exe or run_testcase.py was not found.")
+        run_id = f"TR-{int(time.time() * 1000)}"
+        started = []
+        for case_id in dict.fromkeys(selected):
+            case = available.get(case_id)
+            if case is None:
+                raise RuntimeError(f"Unknown test case selection: {case_id}")
+            command = [str(executable), "cli", "bundle", "run", "--path", str(runner), "--", case["executionName"], str(mode)]
+            started.append({"testCase": case_id, "testCaseName": case["executionName"], "inspectionMode": mode, "processId": None, "command": subprocess.list2cmdline(command), "executionCommand": command, "result": "Pending", "consoleOutput": "", "exitCode": None, "reportUrl": None, "reportLocation": None, "checks": []})
+        run = {"id": run_id, "title": str(body.get("name", "")).strip(), "device": str(body.get("device", "")).strip(), "inspectionMode": mode, "startedAt": datetime.now().astimezone().isoformat(timespec="seconds"), "libraryPath": str(root), "started": started}
+        RUNS.mkdir(parents=True, exist_ok=True)
+        atomic_json(run_path(run_id), run)
+        worker = STATE / "worker.py"
+        worker.write_bytes(SERVER_WORKER_SOURCE)
+        subprocess.Popen([str(executable), "cli", "bundle", "run", "--path", str(worker), "--", "__execute_run", run_id], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+        return serialize_run(run)
+    if operation == "test-runs" and method == "GET":
+        runs = [serialize_run(json.loads(path.read_text(encoding="utf-8"))) for path in RUNS.glob("TR-*.json")] if RUNS.is_dir() else []
+        return {"testRuns": sorted(runs, key=lambda item: item["startedAt"], reverse=True)}
+    match = re.fullmatch(r"test-runs/(TR-[0-9]+)/close", operation)
+    if match:
+        path = run_path(match.group(1)); run = json.loads(path.read_text(encoding="utf-8")); run["stopRequested"] = True; atomic_json(path, run); return serialize_run(run)
+    match = re.fullmatch(r"test-runs/(TR-[0-9]+)/reports/([^/]+)/content", operation)
+    if match:
+        run = json.loads(run_path(match.group(1)).read_text(encoding="utf-8")); item = next((value for value in run["started"] if value["testCase"] == match.group(2)), None)
+        report = Path(item.get("reportLocation", "")) if item else Path()
+        if not item or not report.is_file() or report.stat().st_size > 8 * 1024 * 1024:
+            raise RuntimeError("Test report was not found or exceeds the viewing limit.")
+        return {"contentBase64": base64.b64encode(report.read_bytes()).decode("ascii")}
+    raise RuntimeError("Unsupported IDATA operation.")
+
+
+if __name__ == "__main__" and len(sys.argv) >= 2 and sys.argv[1] == "__execute_update":
+    execute_update()
+elif __name__ == "__main__" and len(sys.argv) >= 2 and sys.argv[1] == "__execute_run":
+    execute_run(sys.argv[2])
+elif __name__ == "__main__":
+    operation, method = sys.argv[1], sys.argv[2]
+    payload = json.loads(base64.b64decode(sys.argv[3])) if len(sys.argv) > 3 and sys.argv[3] else {}
+    try:
+        print(json.dumps({"ok": True, "data": handle(operation, method, payload)}, ensure_ascii=False))
+    except Exception as error:
+        print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False))
+        raise SystemExit(1)

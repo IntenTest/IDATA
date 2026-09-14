@@ -386,7 +386,7 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		switch message.Type {
-		case protocol.TypeResult, protocol.TypeAPIResponse:
+		case protocol.TypeResult:
 			if message.RequestID != "" {
 				client.deliver(message)
 			}
