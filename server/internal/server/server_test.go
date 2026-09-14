@@ -122,7 +122,7 @@ func TestDeviceClientIdentificationDoesNotDependOnSourceIP(t *testing.T) {
 				if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 					t.Fatal(err)
 				}
-				if body.SelfClientID != test.wantClientID || len(body.Clients) != len(test.clients) {
+				if body.SelfClientID != test.wantClientID || len(body.Clients) != 1 {
 					t.Fatalf("unexpected device list response: %#v", body)
 				}
 				if strings.Contains(response.Body.String(), "remote_address") {

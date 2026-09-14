@@ -12,11 +12,16 @@ import (
 )
 
 func TestRequestWaitsForApprovalAndReturnsCredential(t *testing.T) {
+	for _, prefix := range []string{"", "/team/idata"} {
+		t.Run(prefix, func(t *testing.T) { testEnrollmentPrefix(t, prefix) })
+	}
+}
+func testEnrollmentPrefix(t *testing.T, prefix string) {
 	const agentToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	var polls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/v1/enrollments":
+		case prefix + "/api/v1/enrollments":
 			if r.Method != http.MethodPost || r.Header.Get("Origin") != "" {
 				t.Fatalf("unexpected enrollment request")
 			}
@@ -29,7 +34,7 @@ func TestRequestWaitsForApprovalAndReturnsCredential(t *testing.T) {
 				"enrollment_id": strings.Repeat("a", 32), "poll_token": strings.Repeat("b", 64),
 				"expires_at": time.Now().Add(time.Minute).UTC().Format(time.RFC3339),
 			})
-		case "/api/v1/enrollments/" + strings.Repeat("a", 32) + "/status":
+		case prefix + "/api/v1/enrollments/" + strings.Repeat("a", 32) + "/status":
 			if r.Header.Get("Authorization") != "Enrollment "+strings.Repeat("b", 64) {
 				t.Fatalf("missing enrollment polling authorization")
 			}
@@ -44,7 +49,7 @@ func TestRequestWaitsForApprovalAndReturnsCredential(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	pendingCalled := false
-	token, err := Request(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/agent", Identity{
+	token, err := Request(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+prefix+"/ws/agent", Identity{
 		ClientID: "office-pc", Username: `CORP\alice`,
 	}, func() { pendingCalled = true })
 	if err != nil {
@@ -52,5 +57,17 @@ func TestRequestWaitsForApprovalAndReturnsCredential(t *testing.T) {
 	}
 	if token != agentToken || !pendingCalled || polls.Load() != 1 {
 		t.Fatalf("token=%q pending=%v polls=%d", token, pendingCalled, polls.Load())
+	}
+}
+
+func TestEnrollmentPreservesDeploymentPrefix(t *testing.T) {
+	for _, tc := range []struct{ input, want string }{
+		{"ws://other.example:18080/team/idata/ws/agent", "http://other.example:18080/team/idata"},
+		{"wss://another.example/ws/agent", "https://another.example"},
+	} {
+		got, err := httpBaseURL(tc.input)
+		if err != nil || got != tc.want {
+			t.Fatalf("%s: %s %v", tc.input, got, err)
+		}
 	}
 }

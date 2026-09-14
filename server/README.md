@@ -20,16 +20,18 @@ go build -o bin/idatactl ./cmd/idatactl
 | `IDATA_ADMIN_TOKEN` | 是 | 无 | 管理 API / idatactl 凭据 |
 | `IDATA_DEVICE_CREDENTIALS_FILE` | 否 | `/var/lib/idata/device-credentials.json` | 已批准设备凭据哈希存储 |
 | `IDATA_ENROLLMENT_AUTO_APPROVE` | 否 | `true` | 自动批准所有有效的原生 Client 首次申请；设为 `false` 恢复人工审批 |
-| `IDATA_LISTEN_ADDR` | 否 | `:80` | HTTP 监听地址 |
+| `IDATA_LISTEN_ADDR` | 否 | `:12345` | HTTP 监听地址 |
 | `IDATA_BROWSER_PAIRING` | 否 | `false` | 启用 v0.4 Windows 确认兼容 API；v0.5 普通页面不使用 |
 | `IDATA_PAIRING_REQUEST_TTL` | 否 | `2m` | v0.4 兼容确认请求有效时间（`30s`–`10m`） |
 | `IDATA_DEVICE_SESSION_TTL` | 否 | `8h` | 浏览器免密会话时长（`1m`–`24h`） |
 | `IDATA_COMMAND_TIMEOUT` | 否 | `30s` | 默认命令超时 |
 | `IDATA_MAX_COMMAND_TIMEOUT` | 否 | `5m` | 管理员可请求的最大超时 |
 
-监听端口有一个内网部署例外：当 Server 检测到本机网卡地址包含 `10.90.65.189` 且没有明确
-设置 `--listen` 或 `IDATA_LISTEN_ADDR` 时，默认监听 `:12345`；其他服务器仍默认监听
-`:80`。显式配置始终优先。
+The default listener is `:12345` on every machine. Set `--listen` or
+`IDATA_LISTEN_ADDR` to use another bind address or port. Public domain names,
+ports, and reverse-proxy paths do not depend on network interface addresses.
+See [URL deployment](deploy/DOMAIN_DEPLOY.md) for prefix routing and HTTPS
+termination configuration.
 
 如保留旧版 Agent Token，它必须与 Admin Token 不同。两者均通过 systemd 的
 `EnvironmentFile` 注入，不要写入仓库。
@@ -40,25 +42,20 @@ go build -o bin/idatactl ./cmd/idatactl
 IDATA_ADMIN_TOKEN='...' ./bin/idata-server
 ```
 
-打开 `http://服务器地址/` 后有两个平台入口。Windows 按钮通过 `idata://connect` 传递当前
-页面的 Server IP 和端口并唤起本机 Client；macOS 按钮复制一条使用固定安装路径和当前 Server
-地址的 Terminal 命令，并在剪贴板不可用时显示命令供手动复制。两个入口随后使用完全相同的
-轮询、自动注册、设备列表和终端流程。链接和命令均不包含 token 或远程执行内容。发现至少
-一台与浏览器直接来源 IP 相同的在线 Client 后，Server 签发短期会话。
+The browser launch uses the current public URL to open the local Client.
+Browser sessions are matched to the unique Client at the same effective PC IP.
+Nginx's own address is configured through `IDATA_TRUSTED_PROXIES`; requests from
+that proxy use its single `X-Real-IP` value. Direct connections use their socket
+peer address. All HTTP and WebSocket operations use the same normalization.
 
-登录后列出该来源 IP 下的全部在线 Client，用户可以选择其中任意一台。终端 WebSocket 会
-再次验证目标 Client 的 agent 连接与浏览器会话具有相同直接来源 IP，修改页面或目标 ID
-不能越过这一范围。会话存放在 `HttpOnly`、`SameSite=Strict` Cookie 中，默认 8 小时；
-页面提供“退出免密登录”，可立即撤销。Server 不读取 `X-Forwarded-For` 或 `X-Real-IP`。
+Users only see their own PC's Client. Device queries, tests, reports, and terminal
+operations are limited to that Client. Conflicting Clients at one IP produce an
+explicit conflict; an offline PC never falls back to another PC. Sessions use
+HttpOnly, SameSite=Strict cookies with a default eight-hour lifetime.
 
-管理员控制台保留在 `http://服务器地址/admin/`。首次打开输入 `IDATA_ADMIN_TOKEN`，可
-审批或拒绝首次连接设备、撤销已签发的设备凭据，并选择全部在线客户端。默认开启自动注册，
-所有有效的原生 Client 首次连接都不需要管理员操作，但仍会获得可审计、可撤销且绑定设备的
-独立凭据。Windows Client 使用内置或预配置的 Server 地址自动连接，不需要在 Client 上配置
-信任规则或执行批准操作；macOS/Linux 命令行 Client 显式配置 Server WebSocket 地址。申请信息会
-显示用户名、机器名、本机 IP、MAC 和 Server 看到的来源 IP。前三类
-本机信息由 Client 自报，只用于辅助核对。管理员令牌只保存在当前浏览器的 sessionStorage，
-关闭该浏览器会话后需要重新输入；`idatactl` 和原有管理员 API 的行为不变。
+Administrator APIs and `idatactl` remain separate from ordinary browser sessions
+and require the administrator token. They can manage enrollment and credentials.
+The ordinary website does not expose the administrator device list.
 
 新版 Client 会在选择设备时创建持续交互 Shell。Web 控制台通过同源 WebSocket 实时传输
 输入与 stdout/stderr，因此 `cd`、环境变量等状态在当前页面会话中持续有效。关闭页面或
@@ -73,10 +70,9 @@ Server 只审计终端会话的 client ID、session ID、来源地址、开始�
 批准后返回给发起申请的 Client；Server 持久化文件只保存 SHA-256 哈希并由 systemd
 `StateDirectory` 限制访问。
 
-这是面向小规模可信公司内网的简化模型：共享 NAT、VPN 或代理出口的用户会看到并可操作
-该出口下的全部 Client。若以后需要按个人或设备隔离，必须改用身份提供商、每用户账号或
-设备确认，不能继续依赖来源 IP。当前 HTTP/WS 没有传输加密，只适合受信任内网；跨公网
-部署必须使用 HTTPS/WSS。
+The deployment assumes distinct user PC IPs and one Client per PC. See
+[proxy configuration and verification](deploy/DOMAIN_DEPLOY.md) for the required
+Nginx header and backend proxy-address setting.
 
 健康检查：`GET /healthz`。客户端入口：`GET /ws/agent`。自助会话：`GET /api/v1/self`。
 
@@ -203,8 +199,8 @@ curl --fail http://127.0.0.1/healthz
 {"status":"ok"}
 ```
 
-`10.90.65.189` 上应改为访问 `http://127.0.0.1:12345/healthz`，并在防火墙中向实际内网
-网段开放 TCP 12345。其他服务器仍使用 TCP 80。
+Use the configured listener for health checks and firewall rules. With the
+default listener, the local health URL is `http://127.0.0.1:12345/healthz`.
 
 再从同一内网的另一台机器访问 `http://服务器IP/healthz`，确认路由和防火墙均已放行。
 
@@ -266,4 +262,4 @@ sudo systemctl daemon-reload
 
 ## Ubuntu Server 一键部署
 
-按 [部署指导](../LINUX_SERVER_DEPLOY.md) 将 `deploy-ubuntu.sh`、Release 服务端二进制和 `SHA256SUMS` 拷到 Ubuntu 后执行脚本。支持首次安装和重复升级，固定端口 `12345`，保留已有 Token 与设备凭据。
+按 [部署指导](../LINUX_SERVER_DEPLOY.md) 将 `deploy-ubuntu.sh`、Release 服务端二进制和 `SHA256SUMS` 拷到 Ubuntu 后执行脚本。支持首次安装和重复升级，默认端口 `12345`（升级保留配置，可覆盖），保留已有 Token 与设备凭据。

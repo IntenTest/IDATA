@@ -56,7 +56,28 @@ IDATA_DEVICE_SESSION_TTL=8h
 CONFIG
     unset token
 fi
-printf '\nIDATA_LISTEN_ADDR=:12345\n' >> "$work/env"
+# Preserve a configured listen address unless the operator requests a change.
+listen_addr=${IDATA_DEPLOY_LISTEN_ADDR:-}
+if [[ -z $listen_addr && -f $env_file ]]; then
+    listen_addr=$(awk -F= '/^IDATA_LISTEN_ADDR=/ {value=substr($0,index($0,"=")+1)} END {print value}' "$env_file")
+fi
+listen_addr=${listen_addr:-:12345}
+[[ $listen_addr =~ ^([^[:space:]]*):([0-9]+)$ ]] || fail 'Listen address must be HOST:PORT, [IPv6]:PORT, or :PORT.'
+listen_port=${BASH_REMATCH[2]}
+[[ ${#listen_port} -le 5 ]] || fail 'Invalid listen port.'
+listen_port=$((10#$listen_port))
+((listen_port >= 1 && listen_port <= 65535)) || fail 'Listen port must be in 1..65535.'
+health_host=${listen_addr%:*}
+health_host=${health_host#[}
+health_host=${health_host%]}
+case $health_host in ''|0.0.0.0|::) health_host=127.0.0.1 ;; esac
+printf '\nIDATA_LISTEN_ADDR=%s\n' "$listen_addr" >> "$work/env"
+if [[ ${IDATA_DEPLOY_TRUSTED_PROXIES+x} ]]; then
+    [[ $IDATA_DEPLOY_TRUSTED_PROXIES != *$'\n'* && $IDATA_DEPLOY_TRUSTED_PROXIES != *$'\r'* ]] || fail 'Proxy addresses must be one comma-separated line.'
+    awk '!/^[[:space:]]*IDATA_TRUSTED_PROXIES[[:space:]]*=/' "$work/env" > "$work/env.filtered"
+    mv "$work/env.filtered" "$work/env"
+    printf '\nIDATA_TRUSTED_PROXIES=%s\n' "$IDATA_DEPLOY_TRUSTED_PROXIES" >> "$work/env"
+fi
 cat > "$work/unit" <<'UNIT'
 [Unit]
 Description=iData remote command server
@@ -113,8 +134,8 @@ id -u idata >/dev/null 2>&1 || useradd --system --gid idata --no-create-home --s
 changed=true
 systemctl stop idata-server 2>/dev/null || { [[ -z $exec_start ]]; }
 # A different process must not be mistaken for the newly installed service.
-if [[ -n $(ss -H -ltn 'sport = :12345') ]]; then
-    echo 'ERROR: TCP 12345 is occupied by another process.' >&2
+if [[ -n $(ss -H -ltn "sport = :$listen_port") ]]; then
+    echo "ERROR: TCP $listen_port is occupied by another process." >&2
     false
 fi
 install -d -m 0755 /opt/idata
@@ -128,11 +149,11 @@ systemctl restart idata-server
 healthy=false
 for ((attempt=0; attempt<30; attempt++)); do
     if systemctl is-active --quiet idata-server && timeout 2 bash -c '
-        exec 3<>/dev/tcp/127.0.0.1/12345
+        exec 3<>/dev/tcp/"$1"/"$2"
         printf "GET /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3
         response=$(cat <&3)
         [[ $response == *"200 OK"* && $response == *"\"status\":\"ok\""* ]]
-    ' 2>/dev/null; then healthy=true; break; fi
+    ' bash "$health_host" "$listen_port" 2>/dev/null; then healthy=true; break; fi
     sleep 1
 done
 if ! $healthy; then
@@ -141,7 +162,7 @@ if ! $healthy; then
 fi
 systemctl enable idata-server
 trap - ERR INT TERM
-echo 'IDATA deployed successfully: http://SERVER_IP:12345/ (admin: /admin/)'
+echo "IDATA deployed successfully; listening on $listen_addr. Open the configured public URL."
 echo "Previous executable/configuration/service backup: $backup"
 echo 'Admin token remains in /etc/idata/idata-server.env (sudo cat to view).'
-echo 'Device credentials under /var/lib/idata were preserved. Allow TCP 12345 from your trusted network if a firewall is enabled.'
+echo "Device credentials under /var/lib/idata were preserved. Restrict TCP $listen_port to the intended proxy or trusted network."

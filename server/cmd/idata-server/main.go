@@ -5,22 +5,17 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
 	serverpkg "idata-server/internal/server"
 )
 
-const (
-	specialListenIP   = "10.90.65.189"
-	specialListenPort = "12345"
-)
+const defaultListenAddress = ":12345"
 
 func main() {
 	if err := run(); err != nil {
@@ -30,16 +25,20 @@ func main() {
 }
 
 func run() error {
-	listenAddr := flag.String("listen", envOr("IDATA_LISTEN_ADDR", defaultListenAddr()), "HTTP listen address")
+	listenAddr := flag.String("listen", envOr("IDATA_LISTEN_ADDR", defaultListenAddress), "HTTP listen address")
 	browserPairing := flag.Bool("browser-pairing", envBool("IDATA_BROWSER_PAIRING", false), "enable the legacy v0.4 visible Windows confirmation API")
 	autoApproveEnrollment := flag.Bool("enrollment-auto-approve", envBool("IDATA_ENROLLMENT_AUTO_APPROVE", true), "automatically approve every valid native Client enrollment request")
 	deviceSessionTTL := flag.Duration("device-session-ttl", envDuration("IDATA_DEVICE_SESSION_TTL", 8*time.Hour), "browser device-session lifetime")
 	pairingRequestTTL := flag.Duration("pairing-request-ttl", envDuration("IDATA_PAIRING_REQUEST_TTL", 2*time.Minute), "Windows pairing confirmation timeout")
 	defaultTimeout := flag.Duration("command-timeout", envDuration("IDATA_COMMAND_TIMEOUT", 30*time.Second), "default command timeout")
 	maxTimeout := flag.Duration("max-command-timeout", envDuration("IDATA_MAX_COMMAND_TIMEOUT", 5*time.Minute), "maximum command timeout")
+	publicOrigin := flag.String("public-origin", os.Getenv("IDATA_PUBLIC_ORIGIN"), "optional external origin for HTTPS termination, e.g. https://server.example:8443")
+	trustedProxies := flag.String("trusted-proxies", os.Getenv("IDATA_TRUSTED_PROXIES"), "comma-separated Nginx peer IP addresses or CIDRs supplying X-Real-IP")
 	flag.Parse()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	app, err := serverpkg.New(serverpkg.Config{
+		PublicOrigin:          *publicOrigin,
+		TrustedProxies:        *trustedProxies,
 		AgentToken:            os.Getenv("IDATA_AGENT_TOKEN"),
 		AdminToken:            os.Getenv("IDATA_ADMIN_TOKEN"),
 		DeviceCredentialsFile: envOr("IDATA_DEVICE_CREDENTIALS_FILE", "/var/lib/idata/device-credentials.json"),
@@ -87,28 +86,6 @@ func envOr(key, fallback string) string {
 		return value
 	}
 	return fallback
-}
-
-func defaultListenAddr() string {
-	addresses, err := net.InterfaceAddrs()
-	if err != nil {
-		return ":80"
-	}
-	values := make([]string, 0, len(addresses))
-	for _, address := range addresses {
-		values = append(values, address.String())
-	}
-	return listenAddrForInterfaceAddresses(values)
-}
-
-func listenAddrForInterfaceAddresses(addresses []string) string {
-	for _, address := range addresses {
-		ipText, _, _ := strings.Cut(address, "/")
-		if ip := net.ParseIP(ipText); ip != nil && ip.String() == specialListenIP {
-			return ":" + specialListenPort
-		}
-	}
-	return ":80"
 }
 
 func envDuration(key string, fallback time.Duration) time.Duration {

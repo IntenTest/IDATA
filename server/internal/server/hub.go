@@ -19,6 +19,7 @@ import (
 )
 
 var (
+	ErrClientIDInUse         = errors.New("client ID is already active on another PC; configure a unique client ID")
 	ErrClientOffline         = errors.New("client is not online")
 	ErrConnectionEnded       = errors.New("client connection ended")
 	ErrDeviceTokenNotFound   = errors.New("device token does not match an online client")
@@ -35,15 +36,24 @@ func NewHub() *Hub {
 	return &Hub{clients: make(map[string]*clientConn)}
 }
 
-func (h *Hub) register(client *clientConn) {
+func (h *Hub) register(client *clientConn) error {
 	h.mu.Lock()
 	previous := h.clients[client.info.ID]
+	if previous != nil {
+		previousIP, previousErr := addressIP(previous.info.RemoteAddress)
+		newIP, newErr := addressIP(client.info.RemoteAddress)
+		if previousErr != nil || newErr != nil || previousIP != newIP {
+			h.mu.Unlock()
+			return ErrClientIDInUse
+		}
+	}
 	h.clients[client.info.ID] = client
 	h.mu.Unlock()
 
 	if previous != nil && previous != client {
 		previous.close(websocket.ClosePolicyViolation, "replaced by a newer connection")
 	}
+	return nil
 }
 
 func (h *Hub) unregister(client *clientConn) {
@@ -100,7 +110,7 @@ func (h *Hub) listForDeviceToken(deviceToken string) ([]protocol.ClientInfo, str
 	if err != nil {
 		return nil, "", err
 	}
-	return h.sanitizedList(), self.info.ID, nil
+	return oneClient(self), self.info.ID, nil
 }
 
 func (h *Hub) pairingCandidates(remoteAddress string) ([]protocol.ClientInfo, error) {
@@ -149,16 +159,18 @@ func (h *Hub) clientsForIP(remoteAddress string) ([]protocol.ClientInfo, error) 
 }
 
 func (h *Hub) clientForIP(clientID, remoteAddress string) (*clientConn, error) {
-	remoteIP, err := addressIP(remoteAddress)
-	if err != nil {
+	clients, err := h.clientsForIP(remoteAddress)
+	if err != nil || len(clients) != 1 || clients[0].ID != clientID {
 		return nil, ErrClientOffline
 	}
 	client := h.get(clientID)
 	if client == nil {
 		return nil, ErrClientOffline
 	}
-	clientIP, err := addressIP(client.info.RemoteAddress)
-	if err != nil || clientIP != remoteIP {
+	// Recheck after the lookup in case a same-ID connection replaced the entry.
+	expected, _ := addressIP(remoteAddress)
+	actual, err := addressIP(client.info.RemoteAddress)
+	if err != nil || actual != expected {
 		return nil, ErrClientOffline
 	}
 	return client, nil
@@ -417,4 +429,10 @@ func newRequestID() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(buffer), nil
+}
+
+func oneClient(client *clientConn) []protocol.ClientInfo {
+	info := client.info
+	info.RemoteAddress = ""
+	return []protocol.ClientInfo{info}
 }

@@ -33,11 +33,7 @@ import (
 const (
 	defaultAgentToken           = ""
 	defaultBrowserBridgeAddress = "127.0.0.1:17891"
-	specialServerIP             = "10.90.65.189"
-	specialServerPort           = "12345"
-	publicServerIP              = "43.156.108.175"
-	publicServerPort            = "80"
-	defaultServerURL            = "ws://43.156.108.175/ws/agent"
+	defaultServerURL            = "ws://idata.test.huawei.com:80/ws/agent"
 )
 
 func main() {
@@ -141,6 +137,11 @@ func run(logger *slog.Logger, logFile *os.File) error {
 			*serverURL = launchServerURL
 		}
 	}
+	normalizedURL, normalizeErr := serverURLFromInput(*serverURL, "")
+	if normalizeErr != nil {
+		return normalizeErr
+	}
+	*serverURL = normalizedURL
 	logCheckpoint(logger, logFile, "startup options parsed", "browser_login", *browserLogin)
 	if *unregisterURLProtocol {
 		if runtime.GOOS != "windows" {
@@ -158,7 +159,7 @@ func run(logger *slog.Logger, logFile *os.File) error {
 	if *browserLogin && *browserBridgeAddress != "off" && localClientRunning(*browserBridgeAddress) {
 		if launchServerURL != "" {
 			if err := browserbridge.ForwardLaunch(*browserBridgeAddress, launchServerURL); err != nil {
-				logger.Warn("running client did not accept launch endpoint", "error", err)
+				return errors.New("The running Client could not accept this browser launch. Exit it and start the updated Client.")
 			}
 		}
 		return nil
@@ -174,7 +175,7 @@ func run(logger *slog.Logger, logFile *os.File) error {
 		pairingApprover = pairingprompt.Confirm
 	}
 	agentToken := envOr("IDATA_AGENT_TOKEN", valueOr(fileConfig.AgentToken, defaultAgentToken))
-	serverIP, _ := serverEndpoint(*serverURL)
+	serverIP := *serverURL
 	ui, err := startClientUI(clientUIInitial{
 		ServerIP: serverIP, Username: identity.Username, Hostname: identity.Hostname,
 		LocalIP: identity.LocalIP, MACAddress: identity.MACAddress, AutoConnect: launchServerURL != "",
@@ -305,13 +306,12 @@ func run(logger *slog.Logger, logFile *os.File) error {
 			_ = ui.update(clientUIUpdate{State: "error", Message: "Local execution service could not start: " + err.Error()})
 			return
 		}
-		configuredPort := serverPortForHost(action.ServerIP, *serverURL)
-		candidate, buildErr := serverURLFromEndpoint(action.ServerIP, configuredPort, *serverURL)
+		candidate, buildErr := serverURLFromInput(action.ServerIP, *serverURL)
 		if buildErr == nil {
 			buildErr = validateServerURL(candidate, *allowInsecure)
 		}
 		if buildErr != nil {
-			_ = ui.update(clientUIUpdate{State: "error", Message: "服务器 IP 无效。"})
+			_ = ui.update(clientUIUpdate{State: "error", Message: "服务器地址无效。"})
 			return
 		}
 		currentGeneration := generation
@@ -320,7 +320,7 @@ func run(logger *slog.Logger, logFile *os.File) error {
 		activeURL = candidate
 		cancelConnection = cancel
 		activeConnectionContext = connectionCtx
-		_ = ui.update(clientUIUpdate{State: "connecting", ServerIP: activeIP, ServerPort: activePort})
+		_ = ui.update(clientUIUpdate{State: "connecting", ServerIP: activeIP, ServerPort: activePort, ServerURL: candidate})
 		if agentToken == "" {
 			startEnrollment(connectionCtx, currentGeneration, candidate)
 			return
@@ -372,7 +372,7 @@ func run(logger *slog.Logger, logFile *os.File) error {
 			*serverURL = launchURL
 			launchIP, _ := serverEndpoint(launchURL)
 			logger.Info("switching to server from browser launch", "server_ip", launchIP)
-			startConnection(clientUIAction{Action: "connect", ServerIP: launchIP})
+			startConnection(clientUIAction{Action: "connect", ServerIP: launchURL})
 		case event := <-events:
 			if event.generation != generation {
 				continue
@@ -450,8 +450,35 @@ func validDeviceToken(token string) bool {
 	return length >= 32 && length <= 256
 }
 
-func validServerIP(value string) bool {
-	return net.ParseIP(strings.TrimSpace(strings.Trim(value, "[]"))) != nil
+// validServerHost accepts numeric IP addresses and ASCII DNS names without
+// resolving them. DNS is resolved at connection time by the network transport.
+func validServerHost(value string) bool {
+	host := strings.TrimSpace(value)
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		return net.ParseIP(host[1:len(host)-1]) != nil
+	}
+	if net.ParseIP(host) != nil {
+		return true
+	}
+	host = strings.TrimSuffix(host, ".")
+	if len(host) == 0 || len(host) > 253 {
+		return false
+	}
+	numeric := true
+	for _, label := range strings.Split(host, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, c := range label {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-') {
+				return false
+			}
+			if c < '0' || c > '9' {
+				numeric = false
+			}
+		}
+	}
+	return !numeric
 }
 
 func serverURLFromLaunchLink(raw string) (string, error) {
@@ -468,7 +495,7 @@ func serverURLFromLaunchLink(raw string) (string, error) {
 		return "", errors.New("invalid launch parameters")
 	}
 	for key, values := range query {
-		if (key != "server" && key != "port" && key != "secure") || len(values) != 1 {
+		if (key != "server" && key != "port" && key != "secure" && key != "path") || len(values) != 1 {
 			return "", errors.New("unsupported launch parameter")
 		}
 	}
@@ -477,7 +504,7 @@ func serverURLFromLaunchLink(raw string) (string, error) {
 	if serverIP == "" && port == "" && action == "login" {
 		return "", nil
 	}
-	if !validServerIP(serverIP) {
+	if !validServerHost(serverIP) {
 		return "", errors.New("invalid launch server")
 	}
 	portNumber, err := strconv.Atoi(port)
@@ -491,13 +518,20 @@ func serverURLFromLaunchLink(raw string) (string, error) {
 	} else if secure != "" && secure != "0" {
 		return "", errors.New("invalid launch transport")
 	}
-	return (&url.URL{Scheme: scheme, Host: net.JoinHostPort(serverIP, port), Path: "/ws/agent"}).String(), nil
+	agentPath := query.Get("path")
+	if agentPath == "" {
+		agentPath = "/ws/agent"
+	}
+	if !validAgentPath(agentPath) {
+		return "", errors.New("invalid launch path")
+	}
+	return (&url.URL{Scheme: scheme, Host: net.JoinHostPort(serverIP, port), Path: agentPath}).String(), nil
 }
 
 func validateLaunchServerURL(raw string) error {
 	parsed, err := url.Parse(raw)
 	if err != nil || (parsed.Scheme != "ws" && parsed.Scheme != "wss") || parsed.User != nil || parsed.Host == "" ||
-		parsed.Path != "/ws/agent" || parsed.RawQuery != "" || parsed.Fragment != "" || !validServerIP(parsed.Hostname()) {
+		!validAgentPath(parsed.Path) || parsed.RawPath != "" || parsed.ForceQuery || parsed.RawQuery != "" || parsed.Fragment != "" || !validServerHost(parsed.Hostname()) {
 		return errors.New("invalid launch server URL")
 	}
 	portNumber, err := strconv.Atoi(parsed.Port())
@@ -615,23 +649,18 @@ func serverPortForHost(host, previousURL string) string {
 	host = strings.TrimSpace(strings.Trim(host, "[]"))
 	// A supplied endpoint (including a browser launch) takes precedence over
 	// legacy defaults. The URL scheme also defines the implicit 80/443 port.
-	if parsed, err := url.Parse(previousURL); err == nil && parsed.Hostname() == host && (parsed.Scheme == "ws" || parsed.Scheme == "wss") {
+	if parsed, err := url.Parse(previousURL); err == nil && strings.EqualFold(parsed.Hostname(), host) && (parsed.Scheme == "ws" || parsed.Scheme == "wss") {
 		_, port := serverEndpoint(previousURL)
 		return port
 	}
-	if host == specialServerIP {
-		return specialServerPort
-	}
-	if host == publicServerIP {
-		return publicServerPort
-	}
+
 	return "80"
 }
 
 func serverURLFromEndpoint(host, port, previousURL string) (string, error) {
 	host = strings.TrimSpace(strings.Trim(host, "[]"))
 	port = strings.TrimSpace(port)
-	if host == "" || strings.ContainsAny(host, "/\\?#@ \t\r\n") {
+	if !validServerHost(host) {
 		return "", errors.New("invalid server host")
 	}
 	portNumber, err := strconv.Atoi(port)
@@ -639,10 +668,14 @@ func serverURLFromEndpoint(host, port, previousURL string) (string, error) {
 		return "", errors.New("invalid server port")
 	}
 	scheme := "ws"
-	if parsed, err := url.Parse(previousURL); err == nil && parsed.Scheme == "wss" {
-		scheme = "wss"
+	agentPath := "/ws/agent"
+	if parsed, err := url.Parse(previousURL); err == nil && strings.EqualFold(parsed.Hostname(), host) && (parsed.Scheme == "ws" || parsed.Scheme == "wss") {
+		scheme = parsed.Scheme
+		if validAgentPath(parsed.Path) {
+			agentPath = parsed.Path
+		}
 	}
-	return (&url.URL{Scheme: scheme, Host: net.JoinHostPort(host, port), Path: "/ws/agent"}).String(), nil
+	return (&url.URL{Scheme: scheme, Host: net.JoinHostPort(host, port), Path: agentPath}).String(), nil
 }
 
 func startBrowserBridge(ctx context.Context, serverURL, address, clientID, deviceToken string, launch func(string) error, logger *slog.Logger) {

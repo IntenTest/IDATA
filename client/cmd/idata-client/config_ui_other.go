@@ -14,7 +14,7 @@ type clientUIInitial struct {
 	AutoConnect                                       bool
 }
 type clientUIAction struct{ Action, ServerIP string }
-type clientUIUpdate struct{ State, ServerIP, ServerPort, Message string }
+type clientUIUpdate struct{ State, ServerIP, ServerPort, ServerURL, Message string }
 type clientUI struct {
 	actions chan clientUIAction
 	done    chan error

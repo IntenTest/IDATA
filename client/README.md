@@ -18,7 +18,7 @@ python3 deploy/build_windows.py --output bin/idata-client-windows-amd64.exe
 
 程序会自动读取与可执行文件位于同一目录的 `idata-client.json`。这适合 Windows 双击
 启动场景；命令行参数优先于环境变量，环境变量优先于配置文件。未配置时默认连接
-`ws://43.156.108.175/ws/agent`。示例见
+`ws://idata.test.huawei.com:80/ws/agent`。示例见
 `deploy/idata-client.json.example`。
 
 macOS 和 Linux 使用前台命令行模式，也会自动连接默认 Server；需要覆盖地址时可显式提供
@@ -35,7 +35,7 @@ IDATA_SERVER_URL='ws://127.0.0.1:12345/ws/agent' ./idata-client
 
 | 环境变量 | 必填 | 默认值 | 说明 |
 |---|---:|---|---|
-| `IDATA_SERVER_URL` | 否 | `ws://43.156.108.175/ws/agent` | Client 启动后自动连接的管理 Server；成功连接后自动记住 |
+| `IDATA_SERVER_URL` | 否 | `ws://idata.test.huawei.com:80/ws/agent` | Client 启动后自动连接的管理 Server；成功连接后自动记住 |
 | `IDATA_AGENT_TOKEN` | 否 | 无 | 仅用于旧版共享凭据兼容；新设备默认使用自动申请 |
 | `IDATA_CLIENT_ID` | 否 | 当前 hostname | 稳定且唯一的设备 ID |
 | `IDATA_DEVICE_TOKEN` | 否 | 自动生成 | 每台设备唯一的 Web 配对凭据，至少 32 字符 |
@@ -64,14 +64,13 @@ $env:IDATA_CLIENT_ID = 'office-windows'
 窗口支持拖动边框调整大小和最大化；界面会随可用空间自动重排，小尺寸窗口会在内容确实放不下时
 提供滚动条，并按当前显示器的 DPI 和工作区限制初始尺寸、计算居中位置，兼容常见低分辨率及高分屏缩放。
 
-Browser launch links take precedence over legacy IP-based port defaults. The client
-preserves the web page's IP address, port, and HTTP/HTTPS mode for both a fresh
-launch and a handoff to an already running client. For example, opening the link
-from `http://10.90.65.189:54321/` connects to
-`ws://10.90.65.189:54321/ws/agent`. Explicit configuration for the same host is
-also preserved; an omitted port follows the URL scheme (80 for WS, 443 for WSS).
-Only when no matching endpoint is available does manual host selection fall back
-to port 12345 for `10.90.65.189` or port 80 for other hosts.
+Browser launch links are authoritative for the destination host, port, transport,
+and deployment prefix, including handoff to a running client. No IP-specific
+port rules apply. Enter a complete HTTP(S) or WS(S) URL in the Windows window,
+`server_url` configuration, `IDATA_SERVER_URL`, or `--server`. A bare host uses
+port 80 unless it matches an existing configured endpoint. Local loopback ports
+54321 and 17891 belong to the execution service and launcher bridge; they are
+not public deployment ports.
 
 After updating the Windows executable, exit the old running client and run the new
 executable once to refresh the current user's `idata://` registration. Then launch
@@ -195,3 +194,16 @@ script generates the ignored `internal/executionservice/runtime.zip` and enables
 the `idata_bundle` build tag. Plain `go build` is a development build that still
 requires an external worker and Python. The archive includes Python and vendor
 licenses but excludes credentials, settings, logs, and test data.
+
+## Deployment-independent browser launch
+
+The public browser URL determines the launch endpoint. For example,
+`https://server.example:8443/team/idata/` launches
+`wss://server.example:8443/team/idata/ws/agent`. Query strings and fragments from
+the page are not passed to the Client. Enrollment and polling preserve the same
+prefix. Root deployments retain the legacy launch format for compatibility;
+prefixed deployments require the updated Client.
+
+The default is only a fallback, not a restriction. The execution PC resolves DNS
+at connection time. Upgrade both the website/server and Client for path-prefix
+support. See [deployment instructions](../server/deploy/DOMAIN_DEPLOY.md).

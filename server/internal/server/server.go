@@ -27,6 +27,7 @@ var (
 )
 
 type Server struct {
+	proxyTrust       *proxyTrust
 	config           Config
 	hub              *Hub
 	pairings         *pairingManager
@@ -37,6 +38,13 @@ type Server struct {
 }
 
 func New(config Config, logger *slog.Logger) (*Server, error) {
+	proxyTrust, err := newProxyTrust(config.TrustedProxies)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePublicOrigin(config.PublicOrigin); err != nil {
+		return nil, err
+	}
 	if config.AdminToken == "" {
 		return nil, errors.New("admin token is required")
 	}
@@ -76,6 +84,7 @@ func New(config Config, logger *slog.Logger) (*Server, error) {
 	}
 	return &Server{
 		config:      config,
+		proxyTrust:  proxyTrust,
 		hub:         NewHub(),
 		pairings:    newPairingManager(config, logger),
 		enrollments: enrollments,
@@ -114,7 +123,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /api/v1/device-credentials/{credential_id}", s.requireAdmin(http.HandlerFunc(s.handleCredentialRevoke)))
 	mux.HandleFunc("GET /api/v1/clients/{client_id}/terminal", s.handleTerminal)
 	mux.Handle("POST /api/v1/clients/", s.requireAdmin(http.HandlerFunc(s.handleCommand)))
-	return securityHeaders(mux)
+	return s.proxyTrust.handler(publicOriginHandler(s.config.PublicOrigin, securityHeaders(mux)))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -345,7 +354,10 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 	conn.SetPongHandler(func(string) error {
 		return conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 	})
-	s.hub.register(client)
+	if err := s.hub.register(client); err != nil {
+		client.close(websocket.ClosePolicyViolation, err.Error())
+		return
+	}
 	s.logger.Info("client connected", "client_id", client.info.ID, "os", client.info.OS, "remote", r.RemoteAddr)
 
 	pingDone := make(chan struct{})
@@ -601,7 +613,7 @@ func sameOriginOrNative(r *http.Request) bool {
 	if err != nil || !strings.EqualFold(parsed.Host, r.Host) {
 		return false
 	}
-	if r.TLS != nil {
+	if requestIsSecure(r) {
 		return parsed.Scheme == "https"
 	}
 	return parsed.Scheme == "http"
@@ -626,6 +638,10 @@ func (s *Server) handleClients(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handleSelf(w http.ResponseWriter, r *http.Request) {
 	if clients, expiresAt, err := s.pairings.clientsForIPSession(r, s.hub); err == nil {
+		if len(clients) > 1 {
+			writeError(w, 409, "Multiple Clients use this PC address. Keep one Client running on this PC.")
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"clients": clients, "auth_mode": "ip_session",
 			"session_expires_at": expiresAt.UTC().Format(time.RFC3339),
@@ -634,7 +650,7 @@ func (s *Server) handleSelf(w http.ResponseWriter, r *http.Request) {
 	}
 	if client, expiresAt, err := s.pairings.clientForRequest(r, s.hub); err == nil {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"clients": s.hub.sanitizedList(), "self_client_id": client.info.ID,
+			"clients": oneClient(client), "self_client_id": client.info.ID,
 			"auth_mode": "session", "session_expires_at": expiresAt.UTC().Format(time.RFC3339),
 		})
 		return
@@ -667,6 +683,10 @@ func (s *Server) handleIPLogin(w http.ResponseWriter, r *http.Request) {
 	clients, err := s.hub.clientsForIP(r.RemoteAddr)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid remote address")
+		return
+	}
+	if len(clients) > 1 {
+		writeError(w, 409, "Multiple Clients use this PC address. Keep one Client running on this PC.")
 		return
 	}
 	if len(clients) == 0 {

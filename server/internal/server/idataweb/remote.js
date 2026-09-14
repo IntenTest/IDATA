@@ -1,14 +1,17 @@
 (() => {
   "use strict";
 
+  const apiBase = new URL(document.querySelector('meta[name="idata-api-base"]').content, location.href);
+  const endpoint = (path) => new URL(path.replace(/^\//, ""), apiBase).toString();
   const params = new URLSearchParams(location.search);
-  const preferredClient = params.get("client") || "";
   const connection = Vue.reactive({
     visible: false,
     message: "Looking for the IDATA Client…",
     language: localStorage.getItem("idata-language") === "en" ? "en" : "zh-CN",
   });
   const translations = {
+  "Multiple Clients use this PC address. Keep one Client running on this PC.": "检测到同一台 PC 地址有多个客户端，请只保留一个客户端运行。",
+  "The configured proxy must supply one valid X-Real-IP value.": "服务器代理未正确传递本机 IP，请检查代理配置。",
   "Connect IDATA Client": "连接 IDATA 客户端",
   "Open IDATA Client": "启动 IDATA 客户端",
   "Client started — refresh connection": "已启动客户端，刷新连接",
@@ -70,7 +73,7 @@
 
   function setConnected(clientID) {
     state.client = clientID;
-    params.set("client", clientID);
+    params.delete("client");
     history.replaceState({}, "", `${location.pathname}?${params.toString()}`);
     connection.visible = false;
     // Refresh only after an observed disconnection, never on every page load.
@@ -89,13 +92,15 @@
     target.searchParams.set("server", location.hostname.replace(/^\[|\]$/g, ""));
     target.searchParams.set("port", location.port || (location.protocol === "https:" ? "443" : "80"));
     target.searchParams.set("secure", location.protocol === "https:" ? "1" : "0");
+    const agentPath = new URL("ws/agent", apiBase).pathname;
+    if (agentPath !== "/ws/agent") target.searchParams.set("path", agentPath);
     return target.toString();
   }
 
   async function findClient() {
     while (!state.stopped) {
       try {
-        const login = await fetch("/api/v1/ip-login", { method: "POST", cache: "no-store" });
+        const login = await fetch(endpoint("api/v1/ip-login"), { method: "POST", cache: "no-store" });
         const loginResult = await login.clone().json().catch(() => ({}));
         if (!login.ok && login.status !== 202) {
           throw new Error(loginResult.error || "The server could not authorize this browser.");
@@ -107,13 +112,11 @@
           continue;
         }
 
-        const response = await fetch("/api/v1/self", { cache: "no-store" });
+        const response = await fetch(endpoint("api/v1/self"), { cache: "no-store" });
         if (!response.ok) throw new Error("The IDATA Client connection is not ready.");
         const result = await response.json();
         const clients = result.clients || [];
-        const selected = clients.find((item) => item.id === preferredClient)
-          || clients.find((item) => item.id === result.self_client_id)
-          || clients[0];
+        const selected = clients.length === 1 ? clients[0] : null;
         if (!selected) throw new Error("No IDATA execution client is available.");
         if (!(selected.capabilities || []).includes("idata_api_v1")) {
           throw new Error("Update and restart the IDATA Client on this computer.");
@@ -157,7 +160,7 @@
     let response;
     try {
       response = await fetch(
-        `/api/v1/clients/${encodeURIComponent(client)}/idata/${path.slice(5)}`,
+        endpoint(`api/v1/clients/${encodeURIComponent(client)}/idata/${path.slice(5)}`),
         { ...options, cache: "no-store" },
       );
     } catch (error) {
@@ -175,7 +178,7 @@
   setInterval(async () => {
     if (!state.client || state.connectionPromise) return;
     try {
-      const response = await fetch("/api/v1/self", { cache: "no-store" });
+      const response = await fetch(endpoint("api/v1/self"), { cache: "no-store" });
       if (!response.ok) return connectionLost("The IDATA Client disconnected. Reopen it to continue.");
       const result = await response.json();
       if (!(result.clients || []).some((item) => item.id === state.client)) {

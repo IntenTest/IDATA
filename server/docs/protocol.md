@@ -33,7 +33,9 @@ terminal/command support but return a capability error for the new workspace.
 The server exposes these operations at
 `/api/v1/clients/{client_id}/idata/{operation}` and authenticates every request using
 an administrator bearer token or a device/IP browser session authorized for that PC.
-The established shared-NAT/IP access model remains unchanged. HTML reports are
+Browser IP sessions are scoped to the unique Client at the same effective PC
+IP. Explicitly configured proxies supply X-Real-IP; other peers use their socket
+address. All HTTP/WebSocket handlers apply the same PC scope. HTML reports are
 sandboxed and cannot run scripts against the control origin.
 
 Test case archives: POST /api/test-cases/update starts or rejoins a background update;
@@ -41,3 +43,13 @@ GET /api/test-cases/update returns idle/running/complete/failed and a message.
 The worker downloads the saved testCaseArchiveUrl on the execution PC, validates
 UTF-8 archive paths and the mapping CSV, replaces ~/.idata/newest_testcases, and
 saves the new library path. Request deadlines remain unchanged.
+
+Browser launch accepts `idata://connect?server=HOST&port=PORT&secure=0|1`.
+HOST may be an ASCII DNS name, IPv4, or IPv6; PORT is mandatory in 1..65535.
+The optional `path` parameter supplies a deployment-prefixed agent path such as
+`/team/idata/ws/agent`. It must end in `/ws/agent`; only ASCII unreserved path
+segments are allowed, without empty, dot, parent, or escaped-separator segments.
+Omitting it retains `/ws/agent` for older root deployments. Unknown or duplicate
+parameters, credentials, queries within the destination, and fragments are
+rejected. Launch endpoints are preserved through running-client handoff and
+subsequent enrollment/polling. Page query strings and fragments are not included.

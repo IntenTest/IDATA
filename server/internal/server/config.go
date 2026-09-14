@@ -3,6 +3,8 @@ package server
 import "time"
 
 type Config struct {
+	TrustedProxies        string
+	PublicOrigin          string
 	AgentToken            string
 	AdminToken            string
 	DeviceCredentialsFile string

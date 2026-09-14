@@ -73,7 +73,7 @@ func TestManagerStartsAndRecoversRealWorker(t *testing.T) {
 	if err := os.MkdirAll(app, 0700); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"start.py", "run_test_process.py"} {
+	for _, name := range []string{"start.py", "run_test_process.py", "test_commands.py"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "..", "idata", "app", name))
 		if err != nil {
 			t.Fatal(err)

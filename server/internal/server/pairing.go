@@ -354,7 +354,7 @@ func (p *pairingManager) cleanupLocked(now time.Time) {
 func setDeviceSessionCookie(w http.ResponseWriter, r *http.Request, token string, expiresAt time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name: deviceSessionCookie, Value: token, Path: "/", HttpOnly: true,
-		Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode,
+		Secure: requestIsSecure(r), SameSite: http.SameSiteStrictMode,
 		Expires: expiresAt.UTC(), MaxAge: max(1, int(time.Until(expiresAt).Seconds())),
 	})
 }
@@ -362,7 +362,7 @@ func setDeviceSessionCookie(w http.ResponseWriter, r *http.Request, token string
 func clearDeviceSessionCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: deviceSessionCookie, Value: "", Path: "/", HttpOnly: true,
-		Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode,
+		Secure: requestIsSecure(r), SameSite: http.SameSiteStrictMode,
 		Expires: time.Unix(1, 0).UTC(), MaxAge: -1,
 	})
 }

@@ -116,11 +116,11 @@ func TestDefaultAgentToken(t *testing.T) {
 }
 
 func TestDefaultServerURL(t *testing.T) {
-	if defaultServerURL != "ws://43.156.108.175/ws/agent" {
+	if defaultServerURL != "ws://idata.test.huawei.com:80/ws/agent" {
 		t.Fatalf("default server URL = %q", defaultServerURL)
 	}
 	host, port := serverEndpoint(defaultServerURL)
-	if host != "43.156.108.175" || port != "80" {
+	if host != "idata.test.huawei.com" || port != "80" {
 		t.Fatalf("default server endpoint = %s:%s", host, port)
 	}
 }
@@ -138,7 +138,8 @@ func TestServerURLFromLaunchLink(t *testing.T) {
 		{name: "browser-normalized connect", link: "idata://connect/?server=192.168.8.87&port=12345&secure=0", want: "ws://192.168.8.87:12345/ws/agent"},
 		{name: "secure IPv6 connect", link: "idata://connect?server=%3A%3A1&port=443&secure=1", want: "wss://[::1]:443/ws/agent"},
 		{name: "unexpected path rejected", link: "idata://connect/anything?server=192.168.8.87&port=12345", wantError: true},
-		{name: "hostname rejected", link: "idata://connect?server=example.com&port=443", wantError: true},
+		{name: "HTTP domain through Nginx", link: "idata://connect?server=idata.test.huawei.com&port=80&secure=0", want: "ws://idata.test.huawei.com:80/ws/agent"},
+		{name: "secure domain", link: "idata://connect?server=idata.test.huawei.com&port=443&secure=1", want: "wss://idata.test.huawei.com:443/ws/agent"},
 		{name: "missing port rejected", link: "idata://connect?server=192.168.8.87", wantError: true},
 		{name: "token parameter rejected", link: "idata://connect?server=192.168.8.87&port=12345&token=secret", wantError: true},
 		{name: "arbitrary action rejected", link: "idata://run?server=192.168.8.87&port=12345", wantError: true},
@@ -153,14 +154,14 @@ func TestServerURLFromLaunchLink(t *testing.T) {
 	}
 }
 
-func TestValidServerIP(t *testing.T) {
-	for _, value := range []string{"10.0.0.8", "127.0.0.1", "::1", "[2001:db8::1]"} {
-		if !validServerIP(value) {
+func TestValidServerHost(t *testing.T) {
+	for _, value := range []string{"10.0.0.8", "127.0.0.1", "::1", "[2001:db8::1]", "idata.test.huawei.com", "LOCALHOST", "example.com."} {
+		if !validServerHost(value) {
 			t.Fatalf("valid server IP %q was rejected", value)
 		}
 	}
-	for _, value := range []string{"", "server.example", "10.0.0.999", "http://10.0.0.8"} {
-		if validServerIP(value) {
+	for _, value := range []string{"", "-example.com", "example..com", "example.com/evil", "example.com:80", "a@b.com", "a_b.com", "10.0.0.999", "http://10.0.0.8"} {
+		if validServerHost(value) {
 			t.Fatalf("invalid server IP %q was accepted", value)
 		}
 	}
@@ -170,13 +171,15 @@ func TestValidateLaunchServerURL(t *testing.T) {
 	for _, value := range []string{
 		"ws://192.168.8.87:12345/ws/agent",
 		"wss://[2001:db8::1]:443/ws/agent",
+		"ws://idata.test.huawei.com:12345/ws/agent",
+		"wss://idata.test.huawei.com:443/ws/agent",
 	} {
 		if err := validateLaunchServerURL(value); err != nil {
 			t.Fatalf("valid launch URL %q was rejected: %v", value, err)
 		}
 	}
 	for _, value := range []string{
-		"ws://example.com:12345/ws/agent",
+		"ws://-example.com:12345/ws/agent",
 		"ws://192.168.8.87/ws/agent",
 		"ws://192.168.8.87:12345/other",
 		"ws://192.168.8.87:12345/ws/agent?token=secret",
@@ -236,7 +239,7 @@ func TestServerURLFromEndpoint(t *testing.T) {
 	}{
 		{name: "IPv4", host: "10.0.0.8", port: "80", want: "ws://10.0.0.8:80/ws/agent"},
 		{name: "IPv6", host: "[::1]", port: "8080", want: "ws://[::1]:8080/ws/agent"},
-		{name: "preserves secure scheme", host: "idata.example", port: "443", previous: "wss://old.example/ws/agent", want: "wss://idata.example:443/ws/agent"},
+		{name: "preserves secure scheme", host: "idata.example", port: "443", previous: "wss://idata.example/ws/agent", want: "wss://idata.example:443/ws/agent"},
 		{name: "rejects URL in IP field", host: "http://10.0.0.8", port: "80", wantErr: true},
 		{name: "rejects invalid port", host: "10.0.0.8", port: "70000", wantErr: true},
 	}
@@ -254,7 +257,7 @@ func TestServerPortForHost(t *testing.T) {
 	tests := []struct {
 		name, host, previous, want string
 	}{
-		{name: "special intranet server", host: "10.90.65.189", want: "12345"},
+		{name: "IP has no implicit deployment override", host: "10.90.65.189", want: "80"},
 		{name: "public server", host: "43.156.108.175", want: "80"},
 		{name: "public server preserves supplied port", host: "43.156.108.175", previous: "ws://43.156.108.175:12345/ws/agent", want: "12345"},
 		{name: "other server", host: "10.90.65.190", want: "80"},
@@ -273,7 +276,7 @@ func TestServerPortForHost(t *testing.T) {
 
 // Both startup and running-client handoff use this endpoint resolution chain.
 func TestLaunchEndpointSurvivesConnectionSetup(t *testing.T) {
-	for _, host := range []string{"10.90.65.189", "43.156.108.175", "192.168.8.87", "::1"} {
+	for _, host := range []string{"10.90.65.189", "43.156.108.175", "192.168.8.87", "::1", "idata.test.huawei.com"} {
 		for _, endpoint := range []struct{ port, secure, scheme string }{
 			{"54321", "0", "ws"}, {"18080", "0", "ws"},
 			{"80", "0", "ws"}, {"443", "1", "wss"}, {"54443", "1", "wss"},
@@ -297,6 +300,51 @@ func TestLaunchEndpointSurvivesConnectionSetup(t *testing.T) {
 					t.Fatalf("incorrect connection endpoint %q", candidate)
 				}
 			})
+		}
+	}
+}
+
+func TestConfigurableServerInput(t *testing.T) {
+	for _, tc := range []struct{ input, previous, want string }{
+		{"http://other.example:18080/tools/idata/", "wss://old.example:443/ws/agent", "ws://other.example:18080/tools/idata/ws/agent"},
+		{"https://another.example/", "", "wss://another.example:443/ws/agent"},
+		{"http://[2001:db8::1]:8888/", "", "ws://[2001:db8::1]:8888/ws/agent"},
+		{"another.example:9090", "wss://old.example:443/ws/agent", "ws://another.example:9090/ws/agent"},
+		{"other.example", "wss://other.example:8443/tools/ws/agent", "wss://other.example:8443/tools/ws/agent"},
+		{"other.example", "wss://old.example:8443/tools/ws/agent", "ws://other.example:80/ws/agent"},
+	} {
+		got, err := serverURLFromInput(tc.input, tc.previous)
+		if err != nil || got != tc.want {
+			t.Fatalf("input %q: %q, %v; want %q", tc.input, got, err, tc.want)
+		}
+	}
+	for _, input := range []string{"https://user:pass@example.com/", "https://example.com/?token=x", "http://example.com/a/../b", "http://example.com/a%2fb/", "ftp://example.com/"} {
+		if _, err := serverURLFromInput(input, ""); err == nil {
+			t.Fatalf("accepted %q", input)
+		}
+	}
+}
+
+func TestPrefixedLaunchAndHandoff(t *testing.T) {
+	link := "idata://connect?server=other.example&port=8443&secure=1&path=%2Fteam%2Fidata%2Fws%2Fagent"
+	got, err := serverURLFromLaunchLink(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "wss://other.example:8443/team/idata/ws/agent"
+	if got != want {
+		t.Fatal(got)
+	}
+	if err := validateLaunchServerURL(got); err != nil {
+		t.Fatal(err)
+	}
+	rebuilt, err := serverURLFromInput(got, "ws://old.example:12345/ws/agent")
+	if err != nil || rebuilt != want {
+		t.Fatalf("handoff changed endpoint: %s %v", rebuilt, err)
+	}
+	for _, path := range []string{"/../ws/agent", "//ws/agent", "/a%2fb/ws/agent", "/other", "/a/./ws/agent"} {
+		if _, err := serverURLFromLaunchLink("idata://connect?server=other.example&port=80&path=" + url.QueryEscape(path)); err == nil {
+			t.Fatalf("accepted %q", path)
 		}
 	}
 }

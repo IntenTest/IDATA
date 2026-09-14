@@ -9,10 +9,10 @@ import (
 	"idata-server/internal/protocol"
 )
 
-func TestIPLoginListsAndAuthorizesEverySameIPClient(t *testing.T) {
+func TestIPLoginAuthorizesOnlyTheUniqueSameIPClient(t *testing.T) {
 	app := newPairingTestServer(t)
 	first := &clientConn{info: protocol.ClientInfo{ID: "first-pc", OS: "windows", RemoteAddress: "203.0.113.10:41000"}}
-	second := &clientConn{info: protocol.ClientInfo{ID: "second-pc", OS: "darwin", RemoteAddress: "203.0.113.10:41001"}}
+	second := &clientConn{info: protocol.ClientInfo{ID: "second-pc", OS: "darwin", RemoteAddress: "203.0.113.11:41001"}}
 	other := &clientConn{info: protocol.ClientInfo{ID: "other-ip-pc", OS: "windows", RemoteAddress: "198.51.100.20:41000"}}
 	app.hub.clients[first.info.ID] = first
 	app.hub.clients[second.info.ID] = second
@@ -34,7 +34,7 @@ func TestIPLoginListsAndAuthorizesEverySameIPClient(t *testing.T) {
 	if err := json.Unmarshal(loginResponse.Body.Bytes(), &loginBody); err != nil {
 		t.Fatal(err)
 	}
-	if loginBody.Status != "approved" || loginBody.ClientCount != 2 {
+	if loginBody.Status != "approved" || loginBody.ClientCount != 1 {
 		t.Fatalf("login response = %#v", loginBody)
 	}
 	result := loginResponse.Result()
@@ -64,17 +64,17 @@ func TestIPLoginListsAndAuthorizesEverySameIPClient(t *testing.T) {
 	if err := json.Unmarshal(selfResponse.Body.Bytes(), &selfBody); err != nil {
 		t.Fatal(err)
 	}
-	if selfBody.AuthMode != "ip_session" || len(selfBody.Clients) != 2 || selfBody.Clients[0].ID != "first-pc" || selfBody.Clients[1].ID != "second-pc" {
+	if selfBody.AuthMode != "ip_session" || len(selfBody.Clients) != 1 || selfBody.Clients[0].ID != "first-pc" {
 		t.Fatalf("self response = %#v", selfBody)
 	}
-	if selfBody.Clients[0].RemoteAddress != "" || selfBody.Clients[1].RemoteAddress != "" {
+	if selfBody.Clients[0].RemoteAddress != "" {
 		t.Fatal("self response leaked a Client remote address")
 	}
 
 	terminalRequest := httptest.NewRequest(http.MethodGet, "http://idata.example/api/v1/clients/first-pc/terminal", nil)
 	terminalRequest.RemoteAddr = "203.0.113.10:54000"
 	terminalRequest.AddCookie(sessionCookie)
-	for _, clientID := range []string{"first-pc", "second-pc"} {
+	for _, clientID := range []string{"first-pc"} {
 		client, authError := app.terminalClientForAuth(clientID, terminalAuth{Type: "auth", Mode: "ip_session"}, terminalRequest)
 		if authError != "" || client == nil || client.info.ID != clientID {
 			t.Fatalf("%s authorization failed: client=%#v error=%q", clientID, client, authError)
@@ -109,5 +109,20 @@ func TestIPLoginWaitsForAClientAndRequiresSameOrigin(t *testing.T) {
 	app.Handler().ServeHTTP(waitingResponse, waiting)
 	if waitingResponse.Code != http.StatusAccepted || len(waitingResponse.Result().Cookies()) != 0 {
 		t.Fatalf("waiting response status = %d cookies = %#v", waitingResponse.Code, waitingResponse.Result().Cookies())
+	}
+}
+
+func TestDuplicatePCAddressDoesNotChooseAClient(t *testing.T) {
+	app := newTestServer(t)
+	for _, id := range []string{"one", "two"} {
+		app.hub.clients[id] = &clientConn{info: protocol.ClientInfo{ID: id, RemoteAddress: "192.0.2.10:40000"}}
+	}
+	r := httptest.NewRequest("POST", "http://server.example/api/v1/ip-login", nil)
+	r.RemoteAddr = "192.0.2.10:50000"
+	r.Header.Set("Origin", "http://server.example")
+	w := httptest.NewRecorder()
+	app.Handler().ServeHTTP(w, r)
+	if w.Code != 409 || len(w.Result().Cookies()) != 0 {
+		t.Fatal("ambiguous PC address was automatically selected")
 	}
 }

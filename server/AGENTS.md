@@ -17,12 +17,12 @@
 - 断线时要释放该连接的 pending command，不能泄漏 goroutine。
 - API 输入必须限制 body 大小，命令和 client ID 必须验证。
 - `/healthz` 可匿名访问；普通 `/` 只提供 IDATA 页面。连接窗口通过 `idata://` 唤起 Client
-  后创建短期来源 IP 会话，只允许操作直接来源 IP 相同的在线 Client。不得信任转发 header、
-  client ID 或页面状态，终端 WebSocket 必须重新验证来源 IP 范围。
+  后创建短期来源 IP 会话，只允许操作有效来源 IP 相同的在线 Client。仅允许从显式配置的可信 Nginx 地址读取单值 X-Real-IP；其他转发 header、
+  client ID 或页面状态不得授予设备访问。所有 HTTP 和 WebSocket 必须统一使用有效来源 IP。
 - 不提供独立 Server 或管理员网页；管理 API 必须使用管理员 token。
 - 不记录命令输出和认证密钥；命令文本只在明确开启审计策略后才可持久化。
-- IP 会话 Cookie 必须 HttpOnly、SameSite=Strict、限时且可退出；共享代理/NAT 会共享设备
-  列表，这一设计边界必须在 README 中明确说明。
+- IP 会话 Cookie 必须 HttpOnly、SameSite=Strict、限时且可退出；每台用户 PC 使用不同 IP 且最多运行一个 Client；同一有效 IP 出现多个 Client 时
+  必须提示冲突，不能自动选择其他设备。
 
 ## 验证
 

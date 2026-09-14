@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"io"
@@ -20,16 +21,36 @@ func (s *Server) registerIDATA(mux *http.ServeMux) {
 	if err != nil {
 		panic(err)
 	}
+	index, err := fs.ReadFile(assets, "index.html")
+	if err != nil {
+		panic(err)
+	}
+	serveIndex := func(w http.ResponseWriter, r *http.Request, legacy bool) {
+		content := index
+		if legacy {
+			content = bytes.Replace(index, []byte(`name="idata-api-base" content="./"`), []byte(`name="idata-api-base" content="../"`), 1)
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(content))
+	}
 	rootFiles := http.FileServer(http.FS(assets))
 	files := http.StripPrefix("/idata/", rootFiles)
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		// The existing Vue browser build compiles its templates at runtime.
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; frame-src blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+		if r.URL.Path == "/" {
+			serveIndex(w, r, false)
+			return
+		}
 		rootFiles.ServeHTTP(w, r)
 	})
 	mux.HandleFunc("GET /idata/", func(w http.ResponseWriter, r *http.Request) {
 		// The existing Vue browser build compiles its templates at runtime.
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; frame-src blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+		if r.URL.Path == "/idata/" {
+			serveIndex(w, r, true)
+			return
+		}
 		files.ServeHTTP(w, r)
 	})
 	for _, method := range []string{"GET", "POST", "PUT"} {

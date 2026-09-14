@@ -33,6 +33,7 @@ type clientUIAction struct {
 }
 
 type clientUIUpdate struct {
+	ServerURL  string
 	State      string
 	ServerIP   string
 	ServerPort string
@@ -102,7 +103,7 @@ func (ui *clientUI) run(initial clientUIInitial, started chan<- error) {
 	started <- nil
 	startedSent = true
 	ui.emit(clientUIAction{Action: "ready"})
-	if initial.AutoConnect && validServerIP(initial.ServerIP) {
+	if initial.AutoConnect {
 		ui.beginConnect()
 	}
 	ui.mainWindow.Run()
@@ -146,8 +147,8 @@ func (ui *clientUI) createWindow(initial clientUIInitial) error {
 					Label{Text: "连接到管理服务器", Font: Font{Family: "Microsoft YaHei UI", PointSize: 11, Bold: true},
 						TextColor: dark, MinSize: Size{Height: 30}},
 					VSpacer{Size: 4},
-					Label{Text: "服务器 IP", TextColor: muted},
-					LineEdit{AssignTo: &ui.serverIP, Text: initial.ServerIP, CueBanner: "例如 10.0.0.2", MinSize: Size{Height: 30}},
+					Label{Text: "服务器 URL、域名或 IP", TextColor: muted},
+					LineEdit{AssignTo: &ui.serverIP, Text: initial.ServerIP, CueBanner: "例如 http://server.example:8080/", MinSize: Size{Height: 30}},
 					VSpacer{Size: 8},
 					Label{Text: "本机信息", Font: Font{Family: "Microsoft YaHei UI", PointSize: 9, Bold: true}, TextColor: dark},
 					Label{Text: "用户名    " + displayIdentityValue(initial.Username), TextColor: muted, MinSize: Size{Height: 22}},
@@ -282,8 +283,8 @@ func (ui *clientUI) toggleConnect() {
 
 func (ui *clientUI) beginConnect() {
 	serverIP := strings.TrimSpace(strings.Trim(ui.serverIP.Text(), "[]"))
-	if !validServerIP(serverIP) {
-		_ = ui.loginStatus.SetText("请输入有效的服务器 IP。")
+	if _, err := serverURLFromInput(serverIP, ""); err != nil {
+		_ = ui.loginStatus.SetText("请输入有效的服务器 URL、域名或 IP。")
 		return
 	}
 	ui.connecting = true
@@ -366,6 +367,9 @@ func (ui *clientUI) update(update clientUIUpdate) error {
 	ui.mainWindow.Synchronize(func() {
 		switch update.State {
 		case "connecting":
+			if update.ServerURL != "" {
+				_ = ui.serverIP.SetText(update.ServerURL)
+			}
 			ui.loginStatus.SetTextColor(walk.RGB(90, 101, 120))
 			_ = ui.loginStatus.SetText("正在连接服务器 " + net.JoinHostPort(update.ServerIP, update.ServerPort) + "…")
 		case "connected":

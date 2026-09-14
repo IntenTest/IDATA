@@ -19,21 +19,13 @@ func TestEnvBool(t *testing.T) {
 	}
 }
 
-func TestListenAddrForInterfaceAddresses(t *testing.T) {
-	tests := []struct {
-		name      string
-		addresses []string
-		want      string
-	}{
-		{name: "special intranet address", addresses: []string{"127.0.0.1/8", "10.90.65.189/24"}, want: ":12345"},
-		{name: "other address", addresses: []string{"127.0.0.1/8", "10.90.65.190/24"}, want: ":80"},
-		{name: "invalid address ignored", addresses: []string{"not-an-address"}, want: ":80"},
+func TestListenAddressConfiguration(t *testing.T) {
+	t.Setenv("IDATA_LISTEN_ADDR", "127.0.0.1:18080")
+	if got := envOr("IDATA_LISTEN_ADDR", defaultListenAddress); got != "127.0.0.1:18080" {
+		t.Fatal(got)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := listenAddrForInterfaceAddresses(test.addresses); got != test.want {
-				t.Fatalf("listenAddrForInterfaceAddresses() = %q, want %q", got, test.want)
-			}
-		})
+	t.Setenv("IDATA_LISTEN_ADDR", "")
+	if got := envOr("IDATA_LISTEN_ADDR", defaultListenAddress); got != ":12345" {
+		t.Fatal(got)
 	}
 }

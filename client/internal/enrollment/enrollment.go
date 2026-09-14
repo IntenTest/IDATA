@@ -147,7 +147,10 @@ func httpBaseURL(serverURL string) (string, error) {
 	default:
 		return "", errors.New("server URL must use ws or wss")
 	}
-	parsed.Path = ""
+	if !strings.HasSuffix(parsed.Path, "/ws/agent") {
+		return "", errors.New("server URL must end in /ws/agent")
+	}
+	parsed.Path = strings.TrimSuffix(parsed.Path, "/ws/agent")
 	parsed.RawPath = ""
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
