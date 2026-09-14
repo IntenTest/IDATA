@@ -197,8 +197,6 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Default owner": "默认负责人",
   "Test case library path": "测试用例库路径",
   "Test case repository URL": "测试用例库 URL",
-  "The release_Idata branch is cloned into the managed test case directory.": "release_Idata 分支会被克隆到托管的测试用例目录。",
-  "Successful updates replace this directory with the validated repository.": "更新成功后，此目录会替换为已校验的代码库。",
   "IDATA executable path": "IDATA 可执行文件路径",
   "Include all .py files in this directory and its subdirectories.": "包含此目录及其所有子目录中的 .py 文件。",
   "Place the prepared test case package in this directory.": "请将预制好的测试用例包放在此目录。",
@@ -3440,9 +3438,9 @@ const App = {
 
             <el-form class="settings-form" label-position="top">
               <div class="settings-grid">
-                <el-form-item :label="t('Test case repository URL')" class="settings-path-field">
-                  <el-input v-model="appSettings.testCaseRepositoryUrl" placeholder="https://example.com/Testcases.git" />
-                  <span class="settings-field-help">{{ t('The release_Idata branch is cloned into the managed test case directory.') }}</span>
+                <el-form-item label="Test case archive URL" class="settings-path-field">
+                  <el-input v-model="appSettings.testCaseArchiveUrl" placeholder="http://10.90.65.189:54322/Testcases.tar.gz" />
+                  <span class="settings-field-help">Changes are saved automatically. The execution PC downloads and replaces .idata/newest_testcases in your user folder, then reloads the test cases.</span>
                 </el-form-item>
                 <el-form-item :label="t('Project name')">
                   <el-input v-model="appSettings.projectName" />
@@ -3465,7 +3463,7 @@ const App = {
                     placeholder="C:\\path\\to\\test-cases"
                   />
                   <span class="settings-field-help">
-                    {{ t('Successful updates replace this directory with the validated repository.') }}
+                    {{ t('Place the prepared test case package in this directory.') }}
                   </span>
                 </el-form-item>
                 <el-form-item

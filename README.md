@@ -108,20 +108,21 @@ routing, disconnect cleanup, request limits, and local worker forwarding.
 
 ## Download and update test cases
 
-In Settings, set **Test case repository URL** (saved automatically). Select
-**Update test case library** on the Test Cases page. The selected execution PC
-uses Git to make a shallow, single-branch clone of `release_Idata` into a staging
-directory. The branch name is fixed so the repository's default branch is never
-used accidentally.
+In Settings, set **Test case archive URL** (saved automatically). The default is
+`http://10.90.65.189:54322/Testcases.tar.gz`. Select **Update test case library**
+on the Test Cases page. The selected execution PC downloads the archive using
+curl.exe on Windows or curl on macOS; Python extracts UTF-8 filenames without
+requiring a separate tar installation. No shell command is constructed from the URL.
 
-The worker validates the staged repository, then replaces
+The worker stages and validates the archive, then replaces
 `%USERPROFILE%\.idata\newest_testcases` on Windows (`~/.idata/newest_testcases` on
 macOS). Missing directories are created. The previous managed directory is removed
-only after successful installation; failed clones or validation retain it.
-Custom library directories are not deleted. The repository root must contain
+only after successful installation; failed downloads or validation retain it.
+Custom library directories are not deleted. The archive must contain one
 `中英文映射.csv` with the existing required columns and matching Python test files.
-Git must be installed on the execution PC and available on `PATH`. Cloning times
-out after ten minutes.
+Both a top-level Testcases directory and a flat archive are supported. Links and
+unsafe archive paths are rejected. Downloads time out after ten minutes, with a
+2 GiB download limit and 4 GiB extracted-file limit.
 
 The library path is saved automatically. Test runs always use `run_testcase.py`
 from the root of that library. The page displays progress and reloads cases through the client.
