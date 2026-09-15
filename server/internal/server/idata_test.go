@@ -41,10 +41,11 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 	if len(command) >= 8191 {
 		t.Fatalf("Windows command is too long: %d bytes", len(command))
 	}
-	for _, expected := range []string{"curl.exe", "archive extraction/replacement", "IDATA.exe cli bundle run", "test-cases/update"} {
-		if !strings.Contains(command, expected) {
-			t.Fatalf("command does not describe server-owned %q step", expected)
-		}
+	if strings.HasPrefix(strings.ToLower(command), "rem ") {
+		t.Fatal("Windows command is hidden behind a cmd.exe REM prefix")
+	}
+	if !strings.HasPrefix(strings.ToLower(command), "powershell.exe ") {
+		t.Fatalf("Windows command does not directly invoke PowerShell: %s", command)
 	}
 	marker := "-EncodedCommand "
 	encoded := command[strings.LastIndex(command, marker)+len(marker):]
@@ -161,7 +162,7 @@ func TestIDATARoundTripAndDisconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer agent.Close()
-	_ = agent.WriteJSON(protocol.Message{Type: protocol.TypeHello, ProtocolVersion: protocol.Version, ClientID: "pc", OS: "darwin", Capabilities: []string{"server_commands_v1"}})
+	_ = agent.WriteJSON(protocol.Message{Type: protocol.TypeHello, ProtocolVersion: protocol.Version, ClientID: "pc", OS: "darwin", Capabilities: []string{"server_commands_v1", "command_stdin_v1"}})
 	deadline := time.Now().Add(time.Second)
 	for app.hub.get("pc") == nil && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
@@ -204,5 +205,32 @@ func TestIDATARoundTripAndDisconnect(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Fatal("pending operation leaked")
 		}
+	}
+}
+
+func TestIDATARejectsClientWithoutCommandStdin(t *testing.T) {
+	app := newTestServer(t)
+	server := httptest.NewServer(app.Handler())
+	defer server.Close()
+	agent, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/ws/agent", http.Header{"Authorization": []string{"Bearer agent-test-token"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer agent.Close()
+	_ = agent.WriteJSON(protocol.Message{Type: protocol.TypeHello, ProtocolVersion: protocol.Version, ClientID: "old-pc", OS: "windows", ClientVersion: "0.7.12", Capabilities: []string{"server_commands_v1"}})
+	deadline := time.Now().Add(time.Second)
+	for app.hub.get("old-pc") == nil && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	request, _ := http.NewRequest("GET", server.URL+"/api/v1/clients/old-pc/idata/settings", nil)
+	request.Header.Set("Authorization", "Bearer admin-test-token")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, _ := io.ReadAll(response.Body)
+	if response.StatusCode != http.StatusConflict || !strings.Contains(string(body), "0.7.14") {
+		t.Fatalf("status=%d body=%s", response.StatusCode, body)
 	}
 }

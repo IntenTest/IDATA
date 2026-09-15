@@ -77,7 +77,7 @@ func testDomainProxy(t *testing.T, origin, prefix string) {
 		t.Fatal(err)
 	}
 	defer agent.Close()
-	if err := agent.WriteJSON(protocol.Message{Type: protocol.TypeHello, ProtocolVersion: protocol.Version, ClientID: "domain-pc", OS: "windows", DeviceTokenHash: hashDeviceToken(testDeviceToken), Capabilities: []string{"server_commands_v1", "terminal_v1"}}); err != nil {
+	if err := agent.WriteJSON(protocol.Message{Type: protocol.TypeHello, ProtocolVersion: protocol.Version, ClientID: "domain-pc", OS: "windows", DeviceTokenHash: hashDeviceToken(testDeviceToken), Capabilities: []string{"server_commands_v1", "command_stdin_v1", "terminal_v1"}}); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(time.Second)
@@ -123,7 +123,7 @@ func testDomainProxy(t *testing.T, origin, prefix string) {
 			done <- err
 			return
 		}
-		if message.Type != protocol.TypeCommand || !strings.Contains(message.Command, "settings") {
+		if message.Type != protocol.TypeCommand || len(message.Stdin) == 0 {
 			done <- io.ErrUnexpectedEOF
 			return
 		}

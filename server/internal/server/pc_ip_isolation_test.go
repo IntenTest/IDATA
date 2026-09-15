@@ -69,7 +69,7 @@ func TestTwoPCsBehindNginxRouteOnlyToTheirOwnClient(t *testing.T) {
 		}
 		computer.socket = socket
 		computer.done = make(chan struct{})
-		if err := socket.WriteJSON(protocol.Message{Type: protocol.TypeHello, ProtocolVersion: protocol.Version, ClientID: computer.id, OS: "windows", Capabilities: []string{"server_commands_v1", "terminal_v1"}}); err != nil {
+		if err := socket.WriteJSON(protocol.Message{Type: protocol.TypeHello, ProtocolVersion: protocol.Version, ClientID: computer.id, OS: "windows", Capabilities: []string{"server_commands_v1", "command_stdin_v1", "terminal_v1"}}); err != nil {
 			t.Fatal(err)
 		}
 		go func(computer *pc) {
@@ -82,9 +82,9 @@ func TestTwoPCsBehindNginxRouteOnlyToTheirOwnClient(t *testing.T) {
 				if message.Type != protocol.TypeCommand {
 					return
 				}
-				computer.calls.Add(1)
+				call := computer.calls.Add(1)
 				result := fmt.Sprintf(`{"ok":true,"data":{"pc":%q}}`, computer.id)
-				if strings.Contains(message.Command, "/content") {
+				if call%3 == 0 {
 					result = fmt.Sprintf(`{"ok":true,"data":{"contentBase64":%q}}`, base64.StdEncoding.EncodeToString([]byte(computer.id)))
 				}
 				if err := computer.socket.WriteJSON(protocol.Message{Type: protocol.TypeResult, ProtocolVersion: protocol.Version, RequestID: message.RequestID, ExitCode: 0, Stdout: result}); err != nil {
@@ -121,7 +121,7 @@ func TestTwoPCsBehindNginxRouteOnlyToTheirOwnClient(t *testing.T) {
 		for _, operation := range []struct{ method, path string }{{"GET", "devices"}, {"POST", "test-runs"}, {"GET", "test-runs/TR-1/reports/1/content"}} {
 			resp, data = request(computer, operation.method, "/api/v1/clients/"+computer.id+"/idata/"+operation.path)
 			if resp.StatusCode != 200 || !strings.Contains(string(data), computer.id) {
-				t.Fatalf("%s operation routed incorrectly: %s", computer.id, data)
+				t.Fatalf("%s operation %s routed incorrectly: status=%d body=%s", computer.id, operation.path, resp.StatusCode, data)
 			}
 			resp, _ = request(computer, operation.method, "/api/v1/clients/"+other.id+"/idata/"+operation.path)
 			if resp.StatusCode != 403 {

@@ -265,7 +265,7 @@ func TestBrowserPairingRequiresVisibleApproverAndLimitsConcurrentPrompts(t *test
 
 	select {
 	case hello := <-helloReceived:
-		if !containsString(hello.Capabilities, "browser_pairing_v1") || hello.ClientVersion != Version {
+		if !containsString(hello.Capabilities, "browser_pairing_v1") || !containsString(hello.Capabilities, "command_stdin_v1") || hello.ClientVersion != Version {
 			t.Fatalf("pairing capability missing from hello: %#v", hello)
 		}
 	case <-time.After(2 * time.Second):

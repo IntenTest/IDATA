@@ -176,7 +176,7 @@ func TestIDATAWorkspaceIsTheOnlyEmbeddedWebPage(t *testing.T) {
 	if strings.Contains(remote.Body.String(), "[401, 403, 409, 502, 503]") {
 		t.Fatal("command failures still trigger the client disconnect/reload loop")
 	}
-	if !strings.Contains(response.Body.String(), "remote.js?v=20260915-command-stdin") {
+	if !strings.Contains(response.Body.String(), "remote.js?v=20260915-command-stdin-v2") {
 		t.Fatal("remote connection script cache was not invalidated")
 	}
 	if strings.Contains(response.Body.String(), "iData Console") {

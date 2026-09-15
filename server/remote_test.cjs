@@ -15,7 +15,7 @@ const source = fs.readFileSync(__dirname + '/internal/server/idataweb/remote.js'
   let actions;
   const window = {addEventListener(){}};
   const context = {URL, URLSearchParams, location, window, document:{querySelector(){return {content:relativeBase}}}, localStorage:{getItem(){return 'en'}}, history:{replaceState(){}}, ElementPlus:{}, setInterval(){}, setTimeout(){}, Vue:{reactive:x=>x, createApp(config){actions=config.setup(); return {use(){return this}, mount(){}}}},
-   fetch:async (url) => {requests.push(url); return {ok:true,status:200,clone(){return this},json:async()=>({clients:[{id:'pc',capabilities:['server_commands_v1']}]})};}
+   fetch:async (url) => {requests.push(url); return {ok:true,status:200,clone(){return this},json:async()=>({clients:[{id:'pc',capabilities:['server_commands_v1','command_stdin_v1']}]})};}
   };
   vm.runInNewContext(source, context);
   actions.openWindowsClient();

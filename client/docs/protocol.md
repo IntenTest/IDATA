@@ -3,7 +3,7 @@
 Protocol version 1 retains the upstream hello, command/result, terminal, enrollment,
 and browser-session behavior. Agent and administrator credentials remain separate.
 
-The Client advertises `server_commands_v1` in hello. It has no built-in IDATA API,
+The Client advertises `server_commands_v1` and `command_stdin_v1` in hello. It has no built-in IDATA API,
 update workflow, test command builder, worker service, or Python runtime. The Server
 turns each web operation into a normal `command` request. The Client executes that
 command with the generic shell executor and returns the matching `result`.

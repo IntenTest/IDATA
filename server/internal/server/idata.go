@@ -111,6 +111,10 @@ func (s *Server) handleIDATA(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "Update the selected PC to a server-command IDATA client.")
 		return
 	}
+	if !hasCapability(client.info.Capabilities, "command_stdin_v1") {
+		writeError(w, 409, "Update the selected PC to IDATA Client 0.7.14 or newer; this Client cannot receive Server worker input.")
+		return
+	}
 	if r.URL.RawQuery != "" {
 		writeError(w, 400, "Query parameters are not supported.")
 		return
@@ -200,13 +204,7 @@ func idataWorkerCommand(goos, operation, method string) string {
 		// The Server materializes and invokes its PowerShell worker. IDATA.exe is
 		// reserved for actual test-case bundle execution inside that worker.
 		script := fmt.Sprintf(`$ErrorActionPreference='Stop'; $root=Join-Path $env:LOCALAPPDATA 'IDATA\server-command-runtime'; [IO.Directory]::CreateDirectory($root) | Out-Null; $token=[guid]::NewGuid().ToString('N'); $worker=Join-Path $root ($token+'.ps1'); $request=Join-Path $root ($token+'.json'); $utf8=New-Object System.Text.UTF8Encoding($false); [Console]::InputEncoding=$utf8; $wire=[Console]::In.ReadToEnd(); $split=$wire.IndexOf([char]10); if($split -lt 0){throw 'Invalid Server input'}; $payload=$wire.Substring(0,$split).TrimEnd([char]13); [IO.File]::WriteAllText($worker,$wire.Substring($split+1),$utf8); if($payload){[IO.File]::WriteAllBytes($request,[Convert]::FromBase64String($payload))}else{[IO.File]::WriteAllText($request,'',$utf8)}; $workerOutput=(& powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $worker -RequestPath $request -OperationB64 '%s' -MethodB64 '%s' 2>&1 | Out-String); $code=$LASTEXITCODE; Remove-Item -LiteralPath $request,$worker -Force -ErrorAction SilentlyContinue; if($code -eq 0 -and $workerOutput.Contains('__IDATA_SERVER_RESPONSE__')){[Console]::Out.Write($workerOutput); exit 0}; $detail=$workerOutput.Trim(); if($detail.Length -gt 2000){$detail=$detail.Substring($detail.Length-2000)}; [Console]::Error.WriteLine(('Server PowerShell worker returned no response (exit code '+$code+'). '+$detail)); exit 1`, encodedOperation, encodedMethod)
-		label := strings.Map(func(value rune) rune {
-			if value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9' || strings.ContainsRune("/_-", value) {
-				return value
-			}
-			return '-'
-		}, operation)
-		return "rem Server operation " + label + ": curl.exe download, archive extraction/replacement, IDATA.exe cli bundle run & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + powershellEncodedCommand(script)
+		return "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + powershellEncodedCommand(script)
 	}
 	return fmt.Sprintf(`python3 -c '%s' '%s' '%s'`, loader, encodedOperation, encodedMethod)
 }

@@ -22,7 +22,7 @@ import (
 	"idata-client/internal/terminal"
 )
 
-const Version = "0.7.13"
+const Version = "0.7.14"
 
 var ErrAuthenticationRejected = errors.New("agent authentication rejected")
 
@@ -127,7 +127,7 @@ func (a *Agent) connectAndServe(parent context.Context) error {
 	}()
 	defer close(connectionDone)
 
-	capabilities := []string{"terminal_v1", "server_commands_v1"}
+	capabilities := []string{"terminal_v1", "server_commands_v1", "command_stdin_v1"}
 	if a.config.PairingApprover != nil {
 		capabilities = append(capabilities, "browser_pairing_v1")
 	}
