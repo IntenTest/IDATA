@@ -46,6 +46,9 @@ After the whole sequence finishes, the console closes automatically without prom
 for Enter. There is no hidden test scheduler, completion-marker polling loop, or
 repeated log serialization, so long-running tests do not accumulate scheduler memory.
 The hidden test-case update worker redirects stdout and stderr to dedicated files.
+When a case finishes, the task summary seeks directly to the final 2 MB of its log;
+it never loads the complete log before truncating it. Full logs remain on disk and
+the download endpoint continues to enforce its separate size limit.
 
 The Client returns `result` with the matching request ID, exit code, stdout, stderr,
 duration, truncation flags, timeout state, or executor error. Writers use the existing WebSocket lock.

@@ -59,9 +59,25 @@ function Set-ObjectValue($Object, [string]$Name, $Value) {
 
 function Read-LogText([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return '' }
-    $text = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
-    if ($text.Length -gt 2000000) { return "[Earlier output omitted from the web view; download the complete log.]`r`n" + $text.Substring($text.Length - 2000000) }
-    return $text
+    $limit = 2000000
+    $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+    try {
+        $truncated = $stream.Length -gt $limit
+        $count = [int][Math]::Min([int64]$limit, $stream.Length)
+        if ($truncated) { [void]$stream.Seek(-$count, [IO.SeekOrigin]::End) }
+        $buffer = New-Object byte[] $count
+        $offset = 0
+        while ($offset -lt $count) {
+            $read = $stream.Read($buffer, $offset, $count - $offset)
+            if ($read -le 0) { break }
+            $offset += $read
+        }
+        $text = $Utf8.GetString($buffer, 0, $offset)
+        if ($truncated) { return "[Earlier output omitted from the web view; download the complete log.]`r`n" + $text }
+        return $text
+    } finally {
+        $stream.Dispose()
+    }
 }
 
 function Get-UpdateStatus {

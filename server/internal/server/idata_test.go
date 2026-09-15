@@ -110,6 +110,18 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 			t.Fatalf("test runner still contains legacy hidden scheduler mechanism %q", forbidden)
 		}
 	}
+	readLogStart := strings.Index(worker, "function Read-LogText")
+	if readLogStart < 0 {
+		t.Fatal("Windows worker is missing Read-LogText")
+	}
+	readLogEnd := strings.Index(worker[readLogStart:], "\n}\n")
+	if readLogEnd < 0 {
+		t.Fatal("Windows worker is missing Read-LogText")
+	}
+	readLogBody := worker[readLogStart : readLogStart+readLogEnd]
+	if strings.Contains(readLogBody, "Get-Content") || !strings.Contains(readLogBody, "[IO.File]::Open") || !strings.Contains(readLogBody, "[IO.SeekOrigin]::End") {
+		t.Fatal("Read-LogText must read only a bounded tail instead of loading the complete log")
+	}
 	windowsInput := string(idataWorkerInput("windows", []byte(`{"settings":{}}`)))
 	if !strings.Contains(windowsInput, "param(") || strings.Contains(windowsInput, "import base64") {
 		t.Fatal("Windows request did not receive the Server-owned PowerShell worker")
