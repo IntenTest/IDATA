@@ -88,7 +88,7 @@ def update_status(status=None, message=None):
 def discover(current=None):
     current = current or settings()
     root = Path(current["testCaseLibraryPath"]).expanduser()
-    mapping_path = root / "中英文映射.csv"
+    mapping_path = root / "mapping.csv"
     if not mapping_path.is_file():
         return {"testCases": [], "error": f"Test case mapping was not found: {mapping_path}"}
     files = {path.stem: path for path in root.rglob("*.py") if path.name != "__init__.py"}
@@ -146,7 +146,7 @@ def install_archive(current):
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     with package.extractfile(member) as source, destination.open("wb") as output:
                         shutil.copyfileobj(source, output)
-        mappings = list(extracted.rglob("中英文映射.csv"))
+        mappings = list(extracted.rglob("mapping.csv"))
         if len(mappings) != 1:
             raise RuntimeError("The archive must contain exactly one test case mapping CSV.")
         source = mappings[0].parent

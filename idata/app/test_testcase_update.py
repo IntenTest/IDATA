@@ -37,7 +37,7 @@ class ArchiveUpdateTests(unittest.TestCase):
                 def download(command, **kwargs):
                     destination = command[command.index('--output') + 1]
                     with tarfile.open(destination, 'w:gz') as archive:
-                        entries = {'Testcases/中英文映射.csv': '模块_名称,模块_编号,应用_名称,应用_编号,用例_名称,用例_编号\n模块,M,应用,A,示例,TC001\n', 'Testcases/TC001.py': 'print(1)', 'Testcases/run_testcase.py': 'print(2)'}
+                        entries = {'Testcases/mapping.csv': '模块_名称,模块_编号,应用_名称,应用_编号,用例_名称,用例_编号\n模块,M,应用,A,示例,TC001\n', 'Testcases/TC001.py': 'print(1)', 'Testcases/run_testcase.py': 'print(2)'}
                         for name, value in entries.items():
                             data = value.encode('utf-8')
                             info = tarfile.TarInfo(name)

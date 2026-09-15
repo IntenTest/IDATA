@@ -83,7 +83,7 @@ function Get-ExternalExecutable([string]$Name) {
 
 function Find-TestCases($Current) {
     $root = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables([string]$Current.testCaseLibraryPath))
-    $mapping = Join-Path $root '中英文映射.csv'
+    $mapping = Join-Path $root 'mapping.csv'
     if (-not (Test-Path -LiteralPath $mapping -PathType Leaf)) { throw "Test case mapping was not found: $mapping" }
     $files = @{}
     Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.py' | Where-Object Name -ne '__init__.py' | ForEach-Object { $files[$_.BaseName] = $_ }
@@ -124,7 +124,7 @@ function Install-TestCases {
         if ($entries.Count -gt 100000 -or @($entries | Where-Object { $_ -match '(^[/\\])|(^|[/\\])\.\.([/\\]|$)|:' }).Count) { throw 'The archive contains an unsafe path or too many files.' }
         [IO.Directory]::CreateDirectory($extracted) | Out-Null
         & $tar -xzf $archive -C $extracted; if ($LASTEXITCODE -ne 0) { throw 'The test case archive could not be extracted.' }
-        $mappings = @(Get-ChildItem -LiteralPath $extracted -Recurse -File -Filter '中英文映射.csv')
+        $mappings = @(Get-ChildItem -LiteralPath $extracted -Recurse -File -Filter 'mapping.csv')
         if ($mappings.Count -ne 1) { throw 'The archive must contain exactly one test case mapping CSV.' }
         $source = $mappings[0].Directory.FullName
         $check = Find-TestCases ([pscustomobject]@{testCaseLibraryPath=$source})

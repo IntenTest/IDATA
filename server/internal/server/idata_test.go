@@ -84,6 +84,14 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 			t.Fatalf("Server-owned worker does not contain %q", expected)
 		}
 	}
+	legacyMappingName := "\u4e2d\u82f1\u6587\u6620\u5c04.csv"
+	if !strings.Contains(worker, "'mapping.csv'") || strings.Contains(worker, legacyMappingName) {
+		t.Fatal("Windows worker does not use the current mapping.csv filename exclusively")
+	}
+	pythonWorker := string(idataWorkerSource)
+	if !strings.Contains(pythonWorker, `"mapping.csv"`) || strings.Contains(pythonWorker, legacyMappingName) {
+		t.Fatal("Python worker does not use the current mapping.csv filename exclusively")
+	}
 	windowsInput := string(idataWorkerInput("windows", []byte(`{"settings":{}}`)))
 	if !strings.Contains(windowsInput, "param(") || strings.Contains(windowsInput, "import base64") {
 		t.Fatal("Windows request did not receive the Server-owned PowerShell worker")

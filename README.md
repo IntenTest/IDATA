@@ -126,7 +126,7 @@ The worker stages and validates the archive, then replaces
 macOS). Missing directories are created. The previous managed directory is removed
 only after successful installation; failed downloads or validation retain it.
 Custom library directories are not deleted. The archive must contain one
-`中英文映射.csv` with the existing required columns and matching Python test files.
+`mapping.csv` with the existing required columns and matching Python test files.
 Both a top-level Testcases directory and a flat archive are supported. Links and
 unsafe archive paths are rejected. Downloads time out after ten minutes, with a
 2 GiB download limit and 4 GiB extracted-file limit.

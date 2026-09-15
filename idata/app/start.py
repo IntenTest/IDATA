@@ -389,7 +389,7 @@ def install_test_case_archive(settings):
                         destination.parent.mkdir(parents=True, exist_ok=True)
                         with package.extractfile(member) as source, destination.open("wb") as output:
                             shutil.copyfileobj(source, output)
-            candidates = list(extracted.rglob("中英文映射.csv"))
+            candidates = list(extracted.rglob("mapping.csv"))
             if len(candidates) != 1:
                 raise RuntimeError("The archive must contain exactly one test case mapping CSV.")
             library = candidates[0].parent
@@ -444,7 +444,7 @@ def read_test_case_mapping(library_path: Path) -> tuple[dict[str, dict], Path]:
         "用例_名称",
         "用例_编号",
     }
-    mapping_path = library_path / "中英文映射.csv"
+    mapping_path = library_path / "mapping.csv"
     if not mapping_path.is_file():
         raise RuntimeError(f"The test case mapping CSV was not found: {mapping_path}")
     try:
