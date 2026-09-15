@@ -12,9 +12,9 @@ class CommandTests(unittest.TestCase):
     def test_runner_arguments_preserve_spaces_and_unicode(self):
         self.assertEqual(commands.build_test_command(
             "C:/Program Files/IDATA/IDATA.exe", "C:/Test Library/run_testcase.py",
-            "中文 case", 2),
+            "中文 case", 2, "FMR 设备"),
             ["C:/Program Files/IDATA/IDATA.exe", "cli", "bundle", "run",
-             "--path", "C:/Test Library/run_testcase.py", "--", "中文 case", "2"])
+             "--path", "C:/Test Library/run_testcase.py", "--", "中文 case", "2", "--sn", "FMR 设备"])
 
     def test_launch_on_both_platforms(self):
         test = ["C:/Program Files/IDATA/IDATA.exe", "cli", "bundle", "run",

@@ -256,9 +256,10 @@ def handle(operation, method, body):
     if operation == "test-runs" and method == "POST":
         selected = body.get("testCases")
         mode = body.get("inspectionMode")
+        device = str(body.get("device", "")).strip()
         available = {item["id"]: item for item in discover(current)["testCases"]}
-        if not isinstance(selected, list) or not selected or mode not in (0, 1, 2):
-            raise RuntimeError("Select test cases and a valid inspection mode.")
+        if not isinstance(selected, list) or not selected or mode not in (0, 1, 2) or not device:
+            raise RuntimeError("Select test cases, a device, and a valid inspection mode.")
         root = Path(current["testCaseLibraryPath"])
         executable = idata_path(current)
         runner = root / "run_testcase.py"
@@ -270,9 +271,9 @@ def handle(operation, method, body):
             case = available.get(case_id)
             if case is None:
                 raise RuntimeError(f"Unknown test case selection: {case_id}")
-            command = [str(executable), "cli", "bundle", "run", "--path", str(runner), "--", case["executionName"], str(mode)]
+            command = [str(executable), "cli", "bundle", "run", "--path", str(runner), "--", case["executionName"], str(mode), "--sn", device]
             started.append({"testCase": case_id, "testCaseName": case["executionName"], "inspectionMode": mode, "processId": None, "command": subprocess.list2cmdline(command), "executionCommand": command, "result": "Pending", "consoleOutput": "", "exitCode": None, "reportUrl": None, "reportLocation": None, "checks": []})
-        run = {"id": run_id, "title": str(body.get("name", "")).strip(), "device": str(body.get("device", "")).strip(), "inspectionMode": mode, "startedAt": datetime.now().astimezone().isoformat(timespec="seconds"), "libraryPath": str(root), "started": started}
+        run = {"id": run_id, "title": str(body.get("name", "")).strip(), "device": device, "inspectionMode": mode, "startedAt": datetime.now().astimezone().isoformat(timespec="seconds"), "libraryPath": str(root), "started": started}
         RUNS.mkdir(parents=True, exist_ok=True)
         atomic_json(run_path(run_id), run)
         worker = write_background_worker("run-worker.py", "run", run_id)

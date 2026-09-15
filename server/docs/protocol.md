@@ -55,7 +55,9 @@ The Server-owned worker downloads the saved testCaseArchiveUrl on the execution 
 UTF-8 archive paths and the mapping CSV, replaces ~/.idata/newest_testcases, and
 saves the new library path. The Server also constructs every
 `IDATA.exe cli bundle run --path ...` test command and sends it through the same
-generic command channel.
+generic command channel. The arguments forwarded after `--` are the test-case
+execution name, inspection mode, and `--sn <selected HDC device ID>`, matching the
+`run_testcase.py` command-line contract.
 
 The supported corporate Windows baseline is Simplified Chinese Windows 11 x64,
 running as the current non-administrator user with the inbox Windows PowerShell

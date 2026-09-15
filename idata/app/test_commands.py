@@ -9,10 +9,10 @@ from pathlib import Path
 import subprocess
 
 
-def build_test_command(idata_path, runner_path, case_name, inspection_mode):
+def build_test_command(idata_path, runner_path, case_name, inspection_mode, device):
     """Build the IDATA CLI bundle command for one test case."""
     return [str(idata_path), "cli", "bundle", "run", "--path",
-            str(runner_path), "--", case_name, str(inspection_mode)]
+            str(runner_path), "--", case_name, str(inspection_mode), "--sn", device.strip()]
 
 
 def build_launch_command(test_command, worker_executable, process_runner, log_path,

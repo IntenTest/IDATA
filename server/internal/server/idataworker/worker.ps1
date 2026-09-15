@@ -231,7 +231,7 @@ function Execute-VisibleRun([string]$Payload) {
     $exitCode = -1; $failure = ''
     try {
         Set-Location -LiteralPath ([string]$record.libraryPath)
-        & ([string]$record.idataPath) cli bundle run --path ([string]$record.runnerPath) -- ([string]$record.executionName) ([string]$record.inspectionMode) 2>&1 | ForEach-Object {
+        & ([string]$record.idataPath) cli bundle run --path ([string]$record.runnerPath) -- ([string]$record.executionName) ([string]$record.inspectionMode) --sn ([string]$record.device) 2>&1 | ForEach-Object {
             $line = [string]$_
             [Console]::Out.WriteLine($line)
             [IO.File]::AppendAllText($logPath, $line + "`r`n", $Utf8)
@@ -370,8 +370,8 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
         return [ordered]@{testRuns=$runs}
     }
     if ($Operation -eq 'test-runs' -and $Method -eq 'POST') {
-        $selected = @($Body.testCases); $mode = [int]$Body.inspectionMode
-        if (-not $selected.Count -or $mode -notin @(0,1,2)) { throw 'Select test cases and a valid inspection mode.' }
+        $selected = @($Body.testCases); $mode = [int]$Body.inspectionMode; $device = ([string]$Body.device).Trim()
+        if (-not $selected.Count -or $mode -notin @(0,1,2) -or [string]::IsNullOrWhiteSpace($device)) { throw 'Select test cases, a device, and a valid inspection mode.' }
         $current = Get-Settings; $discovered = Find-TestCases $current; $available = @{}
         foreach ($case in @($discovered.testCases)) { $available[[string]$case.id] = $case }
         $idata = Get-IDATAPath $current; $runner = Join-Path ([string]$current.testCaseLibraryPath) 'run_testcase.py'
@@ -380,9 +380,9 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
         foreach ($caseID in @($selected | Select-Object -Unique)) {
             if (-not $available.ContainsKey([string]$caseID)) { throw "Unknown test case selection: $caseID" }
             $case = $available[[string]$caseID]
-            $started += [ordered]@{testCase=[string]$caseID; testCaseName=$case.executionName; executionName=$case.executionName; inspectionMode=$mode; processId=$null; command="$idata cli bundle run --path $runner -- $($case.executionName) $mode"; result='Pending'; consoleOutput=''; exitCode=$null; reportUrl=$null; reportLocation=$null; checks=@()}
+            $started += [ordered]@{testCase=[string]$caseID; testCaseName=$case.executionName; executionName=$case.executionName; inspectionMode=$mode; processId=$null; command="$idata cli bundle run --path $runner -- $($case.executionName) $mode --sn $device"; result='Pending'; consoleOutput=''; exitCode=$null; reportUrl=$null; reportLocation=$null; checks=@()}
         }
-        $run = [ordered]@{id=$runID; title=[string]$Body.name; device=[string]$Body.device; inspectionMode=$mode; startedAt=[DateTimeOffset]::Now.ToString('yyyy-MM-ddTHH:mm:sszzz'); libraryPath=[string]$current.testCaseLibraryPath; stopRequested=$false; started=$started}
+        $run = [ordered]@{id=$runID; title=[string]$Body.name; device=$device; inspectionMode=$mode; startedAt=[DateTimeOffset]::Now.ToString('yyyy-MM-ddTHH:mm:sszzz'); libraryPath=[string]$current.testCaseLibraryPath; stopRequested=$false; started=$started}
         Write-JsonFile (Get-RunPath $runID) $run; Start-BackgroundRun $runID
         return (Serialize-Run $run)
     }

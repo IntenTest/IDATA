@@ -79,7 +79,7 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 		t.Fatal("Windows launcher still tries to recapture direct console output")
 	}
 	worker := string(idataWindowsWorkerSource)
-	for _, expected := range []string{"__IDATA_SERVER_RESPONSE__", "System32\\' + $Name", "Get-SystemExecutable 'curl.exe'", "Get-SystemExecutable 'tar.exe'", "Get-ExternalExecutable 'hdc.exe'", "$columns.Count -lt 3", "$status.ToLower() -ne 'connected'", "const.product.model", "const.product.name", "const.product.os.dist.version", "const.product.devicetype", "osVersion=", "deviceType=", "Start-BackgroundUpdate", "VisibleRunPayload", "Execute-VisibleRun", "WindowStyle Normal", "IDATA test execution log", "logs\\' + $RunID", "IDATA.exe", "cli bundle run", "Handle-Request"} {
+	for _, expected := range []string{"__IDATA_SERVER_RESPONSE__", "System32\\' + $Name", "Get-SystemExecutable 'curl.exe'", "Get-SystemExecutable 'tar.exe'", "Get-ExternalExecutable 'hdc.exe'", "$columns.Count -lt 3", "$status.ToLower() -ne 'connected'", "const.product.model", "const.product.name", "const.product.os.dist.version", "const.product.devicetype", "osVersion=", "deviceType=", "Start-BackgroundUpdate", "VisibleRunPayload", "Execute-VisibleRun", "WindowStyle Normal", "IDATA test execution log", "logs\\' + $RunID", "([string]$record.inspectionMode) --sn ([string]$record.device)", "IDATA.exe", "cli bundle run", "Handle-Request"} {
 		if !strings.Contains(worker, expected) {
 			t.Fatalf("Server-owned worker does not contain %q", expected)
 		}
@@ -91,6 +91,9 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 	pythonWorker := string(idataWorkerSource)
 	if !strings.Contains(pythonWorker, `"mapping.csv"`) || strings.Contains(pythonWorker, legacyMappingName) {
 		t.Fatal("Python worker does not use the current mapping.csv filename exclusively")
+	}
+	if !strings.Contains(pythonWorker, `case["executionName"], str(mode), "--sn", device`) {
+		t.Fatal("Python worker does not forward the selected device to run_testcase.py")
 	}
 	windowsInput := string(idataWorkerInput("windows", []byte(`{"settings":{}}`)))
 	if !strings.Contains(windowsInput, "param(") || strings.Contains(windowsInput, "import base64") {

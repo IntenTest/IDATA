@@ -607,7 +607,7 @@ def start_test_cases_when_ready(request_body: dict) -> dict:
         test_case = discovered_cases[case_id]
         case_name = test_case.get("executionName", test_case["title"])
         test_command = build_test_command(
-            idata_path, runner_path, case_name, inspection_mode
+            idata_path, runner_path, case_name, inspection_mode, device
         )
         log_path = TEST_RUN_LOG_DIRECTORY / f"{run_id}-{case_id}.log"
         status_path = TEST_RUN_LOG_DIRECTORY / f"{run_id}-{case_id}.status.json"
