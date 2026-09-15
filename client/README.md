@@ -129,8 +129,8 @@ idata-client.json
 
 The Windows Client contains no IDATA update, test-run, or local HTTP-service logic.
 It keeps the authenticated Server connection, executes Server-supplied commands
-with timeout and output limits, and returns stdout, stderr, exit status, and timeout
-metadata. The Server owns the worker source and generates the complete Windows
+with optional generic stdin, timeout and output limits, and returns stdout, stderr,
+exit status, and timeout metadata. The Server owns the worker source and generates the complete Windows
 command, including the `curl.exe` archive download/update flow and every
 `IDATA.exe cli bundle run ...` test launch. Commands still run with the current
 Windows user's permissions; no administrator elevation is requested or bypassed.

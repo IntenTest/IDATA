@@ -20,7 +20,7 @@ type Result struct {
 	Error           string
 }
 
-func Run(parent context.Context, command string, timeout time.Duration, outputLimit int64) Result {
+func Run(parent context.Context, command string, stdin []byte, timeout time.Duration, outputLimit int64) Result {
 	started := time.Now()
 	result := Result{ExitCode: -1}
 	if timeout <= 0 {
@@ -37,6 +37,7 @@ func Run(parent context.Context, command string, timeout time.Duration, outputLi
 	name, args := shellCommand(command)
 	cmd := exec.CommandContext(ctx, name, args...)
 	configureCommand(cmd)
+	cmd.Stdin = bytes.NewReader(stdin)
 	stdout := newLimitedBuffer(outputLimit)
 	stderr := newLimitedBuffer(outputLimit)
 	cmd.Stdout = stdout

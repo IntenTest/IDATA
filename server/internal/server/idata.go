@@ -129,10 +129,10 @@ func (s *Server) handleIDATA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	timeout := 40 * time.Second
-	command := idataWorkerCommand(client.info.OS, operation, r.Method, body)
+	command := idataWorkerCommand(client.info.OS, operation, r.Method)
 	ctx, cancel := context.WithTimeout(r.Context(), timeout+15*time.Second)
 	defer cancel()
-	result, err := client.sendCommand(ctx, command, timeout)
+	result, err := client.sendCommandWithInput(ctx, command, idataWorkerInput(body), timeout)
 	if err != nil {
 		writeError(w, 502, "PC disconnected or the server command timed out. Check operation status before retrying.")
 		return
@@ -145,8 +145,8 @@ func (s *Server) handleIDATA(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 502, "The server command failed: "+detail)
 		return
 	}
-	var response idataWorkerResponse
-	if err := json.Unmarshal([]byte(strings.TrimSpace(result.Stdout)), &response); err != nil {
+	response, err := decodeIDATAWorkerResponse(result.Stdout)
+	if err != nil {
 		writeError(w, 502, "The server command returned an invalid response.")
 		return
 	}
@@ -178,16 +178,14 @@ func (s *Server) handleIDATA(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(response.Data)
 }
 
-func idataWorkerCommand(goos, operation, method string, body []byte) string {
-	source := base64.StdEncoding.EncodeToString(idataWorkerSource)
+func idataWorkerCommand(goos, operation, method string) string {
 	encodedOperation := base64.StdEncoding.EncodeToString([]byte(operation))
 	encodedMethod := base64.StdEncoding.EncodeToString([]byte(method))
-	payload := base64.StdEncoding.EncodeToString(body)
-	loader := "import base64,sys;source=base64.b64decode(sys.argv.pop(1));sys.argv[1:3]=[base64.b64decode(v).decode() for v in sys.argv[1:3]];globals()['SERVER_WORKER_SOURCE']=source;exec(compile(source,'<idata-server-worker>','exec'))"
+	loader := "import base64,sys;payload,_,source=sys.stdin.buffer.read().partition(b\"\\n\");sys.argv[1:3]=[base64.b64decode(v).decode() for v in sys.argv[1:3]];sys.argv.append(payload.decode());globals()[\"SERVER_WORKER_SOURCE\"]=source;exec(compile(source,\"<idata-server-worker>\",\"exec\"))"
 	if goos == "windows" {
 		// The Server materializes its own worker and tells IDATA.exe to run it. The
 		// Client neither stores business logic nor decides which executable/args to use.
-		script := fmt.Sprintf(`$ErrorActionPreference='Stop'; $root=Join-Path $env:LOCALAPPDATA 'IDATA\server-command-runtime'; [IO.Directory]::CreateDirectory($root) | Out-Null; $worker=Join-Path $root 'worker.py'; [IO.File]::WriteAllBytes($worker,[Convert]::FromBase64String('%s')); $operation=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('%s')); $method=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('%s')); $idata=Join-Path $env:IDATA_CLIENT_EXECUTABLE_DIRECTORY 'IDATA.exe'; & $idata cli bundle run --path $worker -- $operation $method '%s'; exit $LASTEXITCODE`, source, encodedOperation, encodedMethod, payload)
+		script := fmt.Sprintf(`$ErrorActionPreference='Stop'; $root=Join-Path $env:LOCALAPPDATA 'IDATA\server-command-runtime'; [IO.Directory]::CreateDirectory($root) | Out-Null; $worker=Join-Path $root 'worker.py'; $utf8=New-Object System.Text.UTF8Encoding($false); [Console]::InputEncoding=$utf8; $wire=[Console]::In.ReadToEnd(); $split=$wire.IndexOf([char]10); if($split -lt 0){throw 'Invalid Server input'}; $payload=$wire.Substring(0,$split).TrimEnd([char]13); [IO.File]::WriteAllText($worker,$wire.Substring($split+1),$utf8); $operation=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('%s')); $method=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('%s')); $idata=Join-Path $env:IDATA_CLIENT_EXECUTABLE_DIRECTORY 'IDATA.exe'; & $idata cli bundle run --path $worker -- $operation $method $payload; exit $LASTEXITCODE`, encodedOperation, encodedMethod)
 		label := strings.Map(func(value rune) rune {
 			if value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9' || strings.ContainsRune("/_-", value) {
 				return value
@@ -196,7 +194,26 @@ func idataWorkerCommand(goos, operation, method string, body []byte) string {
 		}, operation)
 		return "rem Server operation " + label + ": curl.exe download, archive extraction/replacement, IDATA.exe cli bundle run & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + powershellEncodedCommand(script)
 	}
-	return fmt.Sprintf(`python3 -c '%s' '%s' '%s' '%s' '%s'`, loader, source, encodedOperation, encodedMethod, payload)
+	return fmt.Sprintf(`python3 -c '%s' '%s' '%s'`, loader, encodedOperation, encodedMethod)
+}
+
+func idataWorkerInput(body []byte) []byte {
+	payload := base64.StdEncoding.EncodeToString(body)
+	input := make([]byte, 0, len(payload)+1+len(idataWorkerSource))
+	input = append(input, payload...)
+	input = append(input, '\n')
+	return append(input, idataWorkerSource...)
+}
+
+func decodeIDATAWorkerResponse(stdout string) (idataWorkerResponse, error) {
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	for index := len(lines) - 1; index >= 0; index-- {
+		var response idataWorkerResponse
+		if json.Unmarshal([]byte(strings.TrimSpace(lines[index])), &response) == nil {
+			return response, nil
+		}
+	}
+	return idataWorkerResponse{}, fmt.Errorf("no worker response found")
 }
 
 func powershellEncodedCommand(script string) string {

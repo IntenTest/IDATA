@@ -30,6 +30,7 @@ type Message struct {
 	DeviceTokenHash string   `json:"device_token_hash,omitempty"`
 	Capabilities    []string `json:"capabilities,omitempty"`
 	Command         string   `json:"command,omitempty"`
+	Stdin           []byte   `json:"stdin,omitempty"`
 	TimeoutSeconds  int      `json:"timeout_seconds,omitempty"`
 	ExitCode        int      `json:"exit_code,omitempty"`
 	Stdout          string   `json:"stdout,omitempty"`

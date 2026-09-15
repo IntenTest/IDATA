@@ -22,7 +22,7 @@ import (
 	"idata-client/internal/terminal"
 )
 
-const Version = "0.7.12"
+const Version = "0.7.13"
 
 var ErrAuthenticationRejected = errors.New("agent authentication rejected")
 
@@ -231,7 +231,7 @@ func (a *Agent) connectAndServe(parent context.Context) error {
 		if message.RequestID == "" {
 			continue
 		}
-		if message.TimeoutSeconds <= 0 || message.TimeoutSeconds > 24*60*60 || len(message.Command) > 128<<10 {
+		if message.TimeoutSeconds <= 0 || message.TimeoutSeconds > 24*60*60 || len(message.Command) > 128<<10 || len(message.Stdin) > 1<<20 {
 			result := protocol.Message{
 				Type: protocol.TypeResult, ProtocolVersion: protocol.Version, RequestID: message.RequestID,
 				ExitCode: -1, Error: "invalid command request",
@@ -252,7 +252,7 @@ func (a *Agent) connectAndServe(parent context.Context) error {
 			case <-ctx.Done():
 				return
 			}
-			executed := executor.Run(ctx, command.Command, time.Duration(command.TimeoutSeconds)*time.Second, a.config.OutputLimit)
+			executed := executor.Run(ctx, command.Command, command.Stdin, time.Duration(command.TimeoutSeconds)*time.Second, a.config.OutputLimit)
 			result := protocol.Message{
 				Type:            protocol.TypeResult,
 				ProtocolVersion: protocol.Version,

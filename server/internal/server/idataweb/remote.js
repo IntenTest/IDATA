@@ -167,7 +167,7 @@
       connectionLost("The server connection was interrupted. Reopen IDATA Client if needed.");
       throw error;
     }
-    if ([401, 403, 409, 502, 503].includes(response.status)) {
+    if ([401, 403, 409, 503].includes(response.status)) {
       const data = await response.clone().json().catch(() => ({}));
       connectionLost(data.error || "The IDATA Client connection is unavailable.");
     }

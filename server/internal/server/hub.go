@@ -331,7 +331,11 @@ func (b *terminalBridge) close() {
 }
 
 func (c *clientConn) sendCommand(ctx context.Context, command string, timeout time.Duration) (protocol.Message, error) {
-	return c.sendRequest(ctx, protocol.Message{Type: protocol.TypeCommand, Command: command, TimeoutSeconds: int(timeout.Seconds())})
+	return c.sendCommandWithInput(ctx, command, nil, timeout)
+}
+
+func (c *clientConn) sendCommandWithInput(ctx context.Context, command string, stdin []byte, timeout time.Duration) (protocol.Message, error) {
+	return c.sendRequest(ctx, protocol.Message{Type: protocol.TypeCommand, Command: command, Stdin: stdin, TimeoutSeconds: int(timeout.Seconds())})
 }
 
 func (c *clientConn) sendRequest(ctx context.Context, message protocol.Message) (protocol.Message, error) {

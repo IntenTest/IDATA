@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/binary"
 	"github.com/gorilla/websocket"
@@ -8,13 +9,36 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
+func TestServerWorkerRunsFromGenericStdin(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix shell integration")
+	}
+	command := exec.Command("/bin/sh", "-c", idataWorkerCommand(runtime.GOOS, "settings", http.MethodGet))
+	command.Stdin = bytes.NewReader(idataWorkerInput(nil))
+	command.Env = append(os.Environ(), "HOME="+t.TempDir())
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("worker failed: %v: %s", err, output)
+	}
+	response, err := decodeIDATAWorkerResponse(string(output))
+	if err != nil || !response.OK || !strings.Contains(string(response.Data), "settings") {
+		t.Fatalf("response = %+v, error = %v, output = %s", response, err, output)
+	}
+}
+
 func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
-	command := idataWorkerCommand("windows", "test-cases/update", http.MethodPost, []byte(`{"force":true}`))
+	command := idataWorkerCommand("windows", "test-cases/update", http.MethodPost)
+	if len(command) >= 8191 {
+		t.Fatalf("Windows command is too long: %d bytes", len(command))
+	}
 	for _, expected := range []string{"curl.exe", "archive extraction/replacement", "IDATA.exe cli bundle run", "test-cases/update"} {
 		if !strings.Contains(command, expected) {
 			t.Fatalf("command does not describe server-owned %q step", expected)
@@ -31,7 +55,7 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 		runes[index] = rune(binary.LittleEndian.Uint16(raw[index*2:]))
 	}
 	script := string(runes)
-	for _, expected := range []string{"IDATA_CLIENT_EXECUTABLE_DIRECTORY", "IDATA.exe", "cli bundle run", "worker.py"} {
+	for _, expected := range []string{"IDATA_CLIENT_EXECUTABLE_DIRECTORY", "IDATA.exe", "cli bundle run", "worker.py", "ReadToEnd"} {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("PowerShell payload does not contain %q", expected)
 		}
@@ -44,6 +68,13 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 		if !strings.Contains(worker, expected) {
 			t.Fatalf("Server-owned worker does not contain %q", expected)
 		}
+	}
+}
+
+func TestDecodeIDATAWorkerResponseIgnoresLauncherOutput(t *testing.T) {
+	response, err := decodeIDATAWorkerResponse("IDATA launcher message\r\n" + `{"ok":true,"data":{"settings":{}}}` + "\r\n")
+	if err != nil || !response.OK || !strings.Contains(string(response.Data), "settings") {
+		t.Fatalf("response = %+v, error = %v", response, err)
 	}
 }
 
@@ -103,7 +134,8 @@ func TestIDATARoundTripAndDisconnect(t *testing.T) {
 		if err := agent.ReadJSON(&request); err != nil {
 			t.Fatal(err)
 		}
-		if request.Type != protocol.TypeCommand || !strings.Contains(request.Command, "python3 -c") {
+		stdin := idataWorkerInput([]byte(`{"settings":{}}`))
+		if request.Type != protocol.TypeCommand || !strings.Contains(request.Command, "python3 -c") || string(request.Stdin) != string(stdin) {
 			t.Fatalf("unexpected request %+v", request)
 		}
 		want := 200
