@@ -1611,10 +1611,10 @@ const App = {
 
       try {
         const response = await window.idataFetch("/api/devices", { cache: "no-store" });
-        if (!response.ok) {
-          throw new Error(`The device service returned HTTP ${response.status}.`);
-        }
         const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || `The device service returned HTTP ${response.status}.`);
+        }
         devices.value = Array.isArray(result.devices) ? result.devices : [];
         devicesError.value = result.error || "";
         devicesLoaded.value = true;

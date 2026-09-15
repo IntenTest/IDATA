@@ -15,18 +15,15 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-_worker_path_argument = ""
-if len(sys.argv) >= 4 and sys.argv[1] == "__request":
-    _worker_path_argument = sys.argv[3]
-elif len(sys.argv) >= 3 and sys.argv[1] in {"__execute_update", "__execute_run"}:
-    _worker_path_argument = sys.argv[2]
-_worker_path_value = os.environ.get("IDATA_SERVER_WORKER_PATH") or _worker_path_argument or globals().get("__file__", "")
+_embedded_header = globals().get("SERVER_EMBEDDED_HEADER")
+if _embedded_header:
+    _request_path_value = base64.b64decode(_embedded_header[0]).decode("utf-8")
+    _worker_path_value = base64.b64decode(_embedded_header[1]).decode("utf-8")
+else:
+    _request_path_value = ""
+    _worker_path_value = os.environ.get("IDATA_SERVER_WORKER_PATH") or globals().get("__file__", "")
 WORKER_PATH = Path(_worker_path_value).resolve() if _worker_path_value else None
 SERVER_WORKER_SOURCE = globals().get("SERVER_WORKER_SOURCE")
-if SERVER_WORKER_SOURCE is None:
-    if WORKER_PATH is None or not WORKER_PATH.is_file():
-        raise RuntimeError("The Server worker path was not provided to IDATA.")
-    SERVER_WORKER_SOURCE = WORKER_PATH.read_bytes()
 STATE = Path.home() / ".idata" / "server-command-runtime"
 SETTINGS = STATE / "settings.json"
 RUNS = STATE / "runs"
@@ -39,6 +36,27 @@ DEFAULTS = {
     "testCaseLibraryPath": str(LIBRARY), "idataExecutablePath": "IDATA.exe",
     "autoLoadDevices": True, "deviceRefreshSeconds": 30, "tablePageSize": 20,
 }
+
+
+def server_worker_source():
+    global SERVER_WORKER_SOURCE
+    if SERVER_WORKER_SOURCE is None:
+        if WORKER_PATH is None or not WORKER_PATH.is_file():
+            raise RuntimeError("The Server worker path was not provided to IDATA.")
+        source = WORKER_PATH.read_bytes()
+        first_line, separator, remainder = source.partition(b"\n")
+        if separator and first_line.startswith(b"SERVER_EMBEDDED_HEADER = "):
+            source = remainder
+        SERVER_WORKER_SOURCE = source
+    return SERVER_WORKER_SOURCE
+
+
+def write_background_worker(name, operation, argument=""):
+    worker = STATE / name
+    worker.parent.mkdir(parents=True, exist_ok=True)
+    header = json.dumps((operation, argument), ensure_ascii=True)
+    worker.write_bytes(f"SERVER_BACKGROUND_REQUEST = {header}\n".encode("ascii") + server_worker_source())
+    return worker
 
 
 def atomic_json(path, value):
@@ -232,11 +250,8 @@ def handle(operation, method, body):
         if not executable.is_file():
             raise RuntimeError("IDATA.exe was not found.")
         update_status("running", "Preparing test case update…")
-        worker = WORKER_PATH or (STATE / "worker.py")
-        if not worker.is_file():
-            worker.parent.mkdir(parents=True, exist_ok=True)
-            worker.write_bytes(SERVER_WORKER_SOURCE)
-        subprocess.Popen([str(executable), "cli", "bundle", "run", "--path", str(worker), "--", "__execute_update", str(worker)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+        worker = write_background_worker("update-worker.py", "update")
+        subprocess.Popen([str(executable), "cli", "bundle", "run", "--path", str(worker)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
         return update_status()
     if operation == "test-runs" and method == "POST":
         selected = body.get("testCases")
@@ -260,9 +275,8 @@ def handle(operation, method, body):
         run = {"id": run_id, "title": str(body.get("name", "")).strip(), "device": str(body.get("device", "")).strip(), "inspectionMode": mode, "startedAt": datetime.now().astimezone().isoformat(timespec="seconds"), "libraryPath": str(root), "started": started}
         RUNS.mkdir(parents=True, exist_ok=True)
         atomic_json(run_path(run_id), run)
-        worker = STATE / "worker.py"
-        worker.write_bytes(SERVER_WORKER_SOURCE)
-        subprocess.Popen([str(executable), "cli", "bundle", "run", "--path", str(worker), "--", "__execute_run", str(worker), run_id], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+        worker = write_background_worker("run-worker.py", "run", run_id)
+        subprocess.Popen([str(executable), "cli", "bundle", "run", "--path", str(worker)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
         return serialize_run(run)
     if operation == "test-runs" and method == "GET":
         runs = [serialize_run(json.loads(path.read_text(encoding="utf-8"))) for path in RUNS.glob("TR-*.json")] if RUNS.is_dir() else []
@@ -281,6 +295,27 @@ def handle(operation, method, body):
 
 
 def main():
+    background_request = globals().get("SERVER_BACKGROUND_REQUEST")
+    if background_request:
+        if background_request[0] == "update":
+            execute_update()
+        elif background_request[0] == "run":
+            execute_run(background_request[1])
+        return
+    if _request_path_value:
+        request_path = Path(_request_path_value)
+        fields = request_path.read_text(encoding="utf-8").splitlines()
+        request_path.unlink(missing_ok=True)
+        if len(fields) == 3:
+            fields.append("")
+        if len(fields) != 4:
+            raise RuntimeError("The Server request file was invalid.")
+        result_path = Path(base64.b64decode(fields[0]).decode("utf-8"))
+        operation = base64.b64decode(fields[1]).decode("utf-8")
+        method = base64.b64decode(fields[2]).decode("utf-8")
+        encoded_payload = fields[3]
+        write_response(result_path, operation, method, encoded_payload)
+        return
     if len(sys.argv) >= 2 and sys.argv[1] == "__execute_update":
         execute_update()
         return
@@ -294,6 +329,10 @@ def main():
         offset = 4
     operation, method = sys.argv[offset], sys.argv[offset + 1]
     encoded_payload = sys.argv[offset + 2] if len(sys.argv) > offset + 2 else ""
+    write_response(result_path, operation, method, encoded_payload)
+
+
+def write_response(result_path, operation, method, encoded_payload):
     payload = json.loads(base64.b64decode(encoded_payload)) if encoded_payload else {}
     try:
         response = {"ok": True, "data": handle(operation, method, payload)}

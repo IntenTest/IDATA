@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"github.com/gorilla/websocket"
 	"idata-server/internal/protocol"
 	"io"
@@ -56,10 +57,13 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 		runes[index] = rune(binary.LittleEndian.Uint16(raw[index*2:]))
 	}
 	script := string(runes)
-	for _, expected := range []string{"IDATA_CLIENT_EXECUTABLE_DIRECTORY", "IDATA_SERVER_WORKER_PATH", "IDATA.exe", "cli bundle run", "worker.py", "ReadToEnd", "Out-String", "Start-Sleep"} {
+	for _, expected := range []string{"IDATA_CLIENT_EXECUTABLE_DIRECTORY", "IDATA.exe", "cli bundle run", "SERVER_EMBEDDED_HEADER", ".request", "ReadToEnd", "Out-String", "Start-Sleep"} {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("PowerShell payload does not contain %q", expected)
 		}
+	}
+	if strings.Contains(script, "-- '__request'") {
+		t.Fatal("Windows command still relies on IDATA forwarding worker arguments")
 	}
 	if strings.Contains(script, "IDATA_COMMAND_PYTHON") {
 		t.Fatal("Windows command still depends on a Client-provided Python runtime")
@@ -83,13 +87,27 @@ func TestDecodeIDATAWorkerResponseIgnoresLauncherOutput(t *testing.T) {
 func TestWorkerWritesResultWhenBundleUsesCustomModuleName(t *testing.T) {
 	directory := t.TempDir()
 	workerPath := directory + "/worker.py"
+	requestPath := directory + "/request"
 	resultPath := directory + "/response.json"
-	if err := os.WriteFile(workerPath, idataWorkerSource, 0600); err != nil {
+	requestFields := []string{
+		base64.StdEncoding.EncodeToString([]byte(resultPath)),
+		base64.StdEncoding.EncodeToString([]byte("settings")),
+		base64.StdEncoding.EncodeToString([]byte("GET")),
+		"",
+	}
+	if err := os.WriteFile(requestPath, []byte(strings.Join(requestFields, "\n")), 0600); err != nil {
 		t.Fatal(err)
 	}
-	code := `import sys; source=sys.stdin.buffer.read(); sys.argv=["worker","__request",sys.argv[1],sys.argv[2],"settings","GET",""]; exec(compile(source,"worker.py","exec"),{"__name__":"idata_bundle"})`
-	command := exec.Command("python3", "-c", code, resultPath, workerPath)
-	command.Stdin = bytes.NewReader(idataWorkerSource)
+	header := fmt.Sprintf("SERVER_EMBEDDED_HEADER = (%q, %q)\n",
+		base64.StdEncoding.EncodeToString([]byte(requestPath)),
+		base64.StdEncoding.EncodeToString([]byte(workerPath)))
+	source := append([]byte(header), idataWorkerSource...)
+	if err := os.WriteFile(workerPath, source, 0600); err != nil {
+		t.Fatal(err)
+	}
+	code := `import sys; source=sys.stdin.buffer.read(); exec(compile(source,"worker.py","exec"),{"__name__":"idata_bundle"})`
+	command := exec.Command("python3", "-c", code)
+	command.Stdin = bytes.NewReader(source)
 	command.Env = append(os.Environ(), "HOME="+t.TempDir())
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("custom-name worker failed: %v: %s", err, output)
