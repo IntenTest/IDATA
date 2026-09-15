@@ -185,7 +185,7 @@ func idataWorkerCommand(goos, operation, method string) string {
 	if goos == "windows" {
 		// The Server materializes its own worker and tells IDATA.exe to run it. The
 		// Client neither stores business logic nor decides which executable/args to use.
-		script := fmt.Sprintf(`$ErrorActionPreference='Stop'; $root=Join-Path $env:LOCALAPPDATA 'IDATA\server-command-runtime'; [IO.Directory]::CreateDirectory($root) | Out-Null; $worker=Join-Path $root 'worker.py'; $utf8=New-Object System.Text.UTF8Encoding($false); [Console]::InputEncoding=$utf8; $wire=[Console]::In.ReadToEnd(); $split=$wire.IndexOf([char]10); if($split -lt 0){throw 'Invalid Server input'}; $payload=$wire.Substring(0,$split).TrimEnd([char]13); [IO.File]::WriteAllText($worker,$wire.Substring($split+1),$utf8); $operation=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('%s')); $method=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('%s')); $idata=Join-Path $env:IDATA_CLIENT_EXECUTABLE_DIRECTORY 'IDATA.exe'; & $idata cli bundle run --path $worker -- $operation $method $payload; exit $LASTEXITCODE`, encodedOperation, encodedMethod)
+		script := fmt.Sprintf(`$ErrorActionPreference='Stop'; $root=Join-Path $env:LOCALAPPDATA 'IDATA\server-command-runtime'; [IO.Directory]::CreateDirectory($root) | Out-Null; $worker=Join-Path $root 'worker.py'; $result=Join-Path $root (([guid]::NewGuid().ToString('N'))+'.json'); $utf8=New-Object System.Text.UTF8Encoding($false); [Console]::InputEncoding=$utf8; $wire=[Console]::In.ReadToEnd(); $split=$wire.IndexOf([char]10); if($split -lt 0){throw 'Invalid Server input'}; $payload=$wire.Substring(0,$split).TrimEnd([char]13); [IO.File]::WriteAllText($worker,$wire.Substring($split+1),$utf8); $operation=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('%s')); $method=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('%s')); $idata=Join-Path $env:IDATA_CLIENT_EXECUTABLE_DIRECTORY 'IDATA.exe'; & $idata cli bundle run --path $worker -- '__request' $result $operation $method $payload; $code=$LASTEXITCODE; if(Test-Path -LiteralPath $result){$response=[Convert]::ToBase64String([IO.File]::ReadAllBytes($result)); Remove-Item -LiteralPath $result -Force -ErrorAction SilentlyContinue; [Console]::Out.WriteLine(); [Console]::Out.WriteLine('__IDATA_SERVER_RESPONSE__'+$response); exit 0}; exit $code`, encodedOperation, encodedMethod)
 		label := strings.Map(func(value rune) rune {
 			if value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9' || strings.ContainsRune("/_-", value) {
 				return value
@@ -206,6 +206,19 @@ func idataWorkerInput(body []byte) []byte {
 }
 
 func decodeIDATAWorkerResponse(stdout string) (idataWorkerResponse, error) {
+	const marker = "__IDATA_SERVER_RESPONSE__"
+	if offset := strings.LastIndex(stdout, marker); offset >= 0 {
+		encoded := strings.TrimSpace(stdout[offset+len(marker):])
+		if fields := strings.Fields(encoded); len(fields) > 0 {
+			data, decodeErr := base64.StdEncoding.DecodeString(fields[0])
+			if decodeErr == nil {
+				var response idataWorkerResponse
+				if json.Unmarshal(data, &response) == nil {
+					return response, nil
+				}
+			}
+		}
+	}
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
 	for index := len(lines) - 1; index >= 0; index-- {
 		var response idataWorkerResponse

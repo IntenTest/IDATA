@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"github.com/gorilla/websocket"
 	"idata-server/internal/protocol"
 	"io"
@@ -72,9 +73,29 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 }
 
 func TestDecodeIDATAWorkerResponseIgnoresLauncherOutput(t *testing.T) {
-	response, err := decodeIDATAWorkerResponse("IDATA launcher message\r\n" + `{"ok":true,"data":{"settings":{}}}` + "\r\n")
+	payload := base64.StdEncoding.EncodeToString([]byte(`{"ok":true,"data":{"settings":{}}}`))
+	response, err := decodeIDATAWorkerResponse("IDATA launcher message\r\n__IDATA_SERVER_RESPONSE__" + payload + "\r\n")
 	if err != nil || !response.OK || !strings.Contains(string(response.Data), "settings") {
 		t.Fatalf("response = %+v, error = %v", response, err)
+	}
+}
+
+func TestWorkerWritesResultWhenBundleUsesCustomModuleName(t *testing.T) {
+	resultPath := t.TempDir() + "/response.json"
+	code := `import sys; source=sys.stdin.buffer.read(); sys.argv=["worker","__request",sys.argv[1],"settings","GET",""]; exec(compile(source,"worker.py","exec"),{"__name__":"idata_bundle","__file__":"worker.py","SERVER_WORKER_SOURCE":source})`
+	command := exec.Command("python3", "-c", code, resultPath)
+	command.Stdin = bytes.NewReader(idataWorkerSource)
+	command.Env = append(os.Environ(), "HOME="+t.TempDir())
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("custom-name worker failed: %v: %s", err, output)
+	}
+	data, err := os.ReadFile(resultPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response idataWorkerResponse
+	if json.Unmarshal(data, &response) != nil || !response.OK || !strings.Contains(string(response.Data), "settings") {
+		t.Fatalf("invalid result file: %s", data)
 	}
 }
 

@@ -21,7 +21,8 @@ Arbitrary URLs, query parameters, static-file paths, and other methods are rejec
 by the Server before command generation. The Client allows four concurrent commands,
 commands up to 128 KiB and generic stdin payloads up to 1 MiB, and enforces the
 supplied timeout and output limit. Server-owned workers travel through stdin rather
-than the Windows command line.
+than the Windows command line. Result framing is chosen by the Server command, so
+the Client remains unaware of IDATA worker response formats.
 Long-running tests return after launch and are polled separately. Disconnecting the
 browser does not cancel a test; the explicit close operation does. If launch status
 is uncertain after a connection failure, inspect test runs before retrying.

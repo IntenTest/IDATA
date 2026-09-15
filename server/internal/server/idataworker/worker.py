@@ -265,15 +265,32 @@ def handle(operation, method, body):
     raise RuntimeError("Unsupported IDATA operation.")
 
 
-if __name__ == "__main__" and len(sys.argv) >= 2 and sys.argv[1] == "__execute_update":
-    execute_update()
-elif __name__ == "__main__" and len(sys.argv) >= 2 and sys.argv[1] == "__execute_run":
-    execute_run(sys.argv[2])
-elif __name__ == "__main__":
-    operation, method = sys.argv[1], sys.argv[2]
-    payload = json.loads(base64.b64decode(sys.argv[3])) if len(sys.argv) > 3 and sys.argv[3] else {}
+def main():
+    if len(sys.argv) >= 2 and sys.argv[1] == "__execute_update":
+        execute_update()
+        return
+    if len(sys.argv) >= 2 and sys.argv[1] == "__execute_run":
+        execute_run(sys.argv[2])
+        return
+    result_path = None
+    offset = 1
+    if len(sys.argv) >= 2 and sys.argv[1] == "__request":
+        result_path = Path(sys.argv[2])
+        offset = 3
+    operation, method = sys.argv[offset], sys.argv[offset + 1]
+    encoded_payload = sys.argv[offset + 2] if len(sys.argv) > offset + 2 else ""
+    payload = json.loads(base64.b64decode(encoded_payload)) if encoded_payload else {}
     try:
-        print(json.dumps({"ok": True, "data": handle(operation, method, payload)}, ensure_ascii=False))
+        response = {"ok": True, "data": handle(operation, method, payload)}
     except Exception as error:
-        print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False))
-        raise SystemExit(1)
+        response = {"ok": False, "error": str(error)}
+    encoded_response = json.dumps(response, ensure_ascii=False)
+    if result_path is not None:
+        result_path.write_text(encoded_response, encoding="utf-8")
+    else:
+        print(encoded_response)
+
+
+# IDATA's bundle runner may execute scripts under a non-standard module name.
+# This file is an executable Server command payload, not an importable library.
+main()
