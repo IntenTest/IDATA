@@ -32,7 +32,7 @@ type idataWorkerResponse struct {
 }
 
 var (
-	idataReadOperation  = regexp.MustCompile(`^(devices|settings|model-config|test-cases|test-cases/update|test-runs|test-runs/TR-[0-9]+/reports/[A-Za-z0-9._%-]+/content)$`)
+	idataReadOperation  = regexp.MustCompile(`^(devices|settings|model-config|test-cases|test-cases/update|test-runs|test-runs/TR-[0-9]+/(reports|logs)/[A-Za-z0-9._%-]+/content)$`)
 	idataWriteOperation = regexp.MustCompile(`^(test-cases/update|test-runs|test-runs/TR-[0-9]+/close)$`)
 )
 
@@ -173,16 +173,25 @@ func (s *Server) handleIDATA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.HasSuffix(r.PathValue("operation"), "/content") {
-		var report struct {
+		var contentResponse struct {
 			ContentBase64 string `json:"contentBase64"`
 		}
-		if json.Unmarshal(response.Data, &report) != nil {
-			writeError(w, 502, "The report response was invalid.")
+		if json.Unmarshal(response.Data, &contentResponse) != nil {
+			writeError(w, 502, "The file response was invalid.")
 			return
 		}
-		content, err := base64.StdEncoding.DecodeString(report.ContentBase64)
+		content, err := base64.StdEncoding.DecodeString(contentResponse.ContentBase64)
 		if err != nil || len(content) > 8<<20 {
-			writeError(w, 502, "The report response exceeded the viewing limit.")
+			writeError(w, 502, "The file response exceeded the download limit.")
+			return
+		}
+		if strings.Contains(operation, "/logs/") {
+			parts := strings.Split(operation, "/")
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s.log"`, parts[1], parts[3]))
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(content)
 			return
 		}
 		w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'")

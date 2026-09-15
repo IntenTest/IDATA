@@ -29,6 +29,13 @@ Long-running tests return after launch and are polled separately. Disconnecting 
 browser does not cancel a test; the explicit close operation does. If launch status
 is uncertain after a connection failure, inspect test runs before retrying.
 
+On Windows, every test case runs in a visible Windows PowerShell console generated
+by the Server worker. Combined stdout/stderr and launch diagnostics are persisted as
+UTF-8 under `%USERPROFILE%\.idata\server-command-runtime\logs\<run-id>` and mirrored
+into the run details while execution is active. Authorized users can download each
+complete log through `/api/test-runs/{run}/logs/{case}/content`. Closing a run ends
+the visible process tree and records the interruption in the same log.
+
 The Client returns `result` with the matching request ID, exit code, stdout, stderr,
 duration, truncation flags, timeout state, or executor error. Writers use the existing WebSocket lock.
 Disconnected server connections release pending requests. Older clients keep their

@@ -138,6 +138,12 @@ it is running to resume watching. Client or worker shutdown interrupts the updat
 The Windows management worker is embedded in the Server release and requires no
 separate deployment.
 
+Windows test cases open in a visible PowerShell console. Each case records its
+command, paths, Windows and PowerShell versions, combined stdout/stderr, exception,
+and exit code in a UTF-8 log under
+`%USERPROFILE%\.idata\server-command-runtime\logs\<run-id>`. The run details page
+shows the collected output and provides a download button for the complete log.
+
 Regression check: `python3 -m unittest discover -s idata/app -p 'test_*.py'`.
 
 ## Ubuntu Server 一键部署

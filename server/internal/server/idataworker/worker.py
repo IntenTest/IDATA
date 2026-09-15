@@ -291,6 +291,15 @@ def handle(operation, method, body):
         if not item or not report.is_file() or report.stat().st_size > 8 * 1024 * 1024:
             raise RuntimeError("Test report was not found or exceeds the viewing limit.")
         return {"contentBase64": base64.b64encode(report.read_bytes()).decode("ascii")}
+    match = re.fullmatch(r"test-runs/(TR-[0-9]+)/logs/([^/]+)/content", operation)
+    if match:
+        run = json.loads(run_path(match.group(1)).read_text(encoding="utf-8")); item = next((value for value in run["started"] if value["testCase"] == match.group(2)), None)
+        if not item:
+            raise RuntimeError("Test execution log was not found.")
+        content = item.get("consoleOutput", "").encode("utf-8")
+        if len(content) > 8 * 1024 * 1024:
+            raise RuntimeError("Test execution log exceeds the download limit.")
+        return {"contentBase64": base64.b64encode(content).decode("ascii")}
     raise RuntimeError("Unsupported IDATA operation.")
 
 

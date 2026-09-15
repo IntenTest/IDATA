@@ -3,7 +3,8 @@ param(
     [string]$OperationB64,
     [string]$MethodB64,
     [switch]$BackgroundUpdate,
-    [string]$BackgroundRun
+    [string]$BackgroundRun,
+    [string]$VisibleRunPayload
 )
 
 $ErrorActionPreference = 'Stop'
@@ -55,6 +56,13 @@ function Get-Settings {
 function Set-ObjectValue($Object, [string]$Name, $Value) {
     if ($Object.PSObject.Properties.Name -contains $Name) { $Object.$Name = $Value }
     else { $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value }
+}
+
+function Read-LogText([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return '' }
+    $text = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    if ($text.Length -gt 2000000) { return "[Earlier output omitted from the web view; download the complete log.]`r`n" + $text.Substring($text.Length - 2000000) }
+    return $text
 }
 
 function Get-UpdateStatus {
@@ -191,21 +199,116 @@ function Start-BackgroundRun([string]$RunID) {
     Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) -WindowStyle Hidden | Out-Null
 }
 
+function Execute-VisibleRun([string]$Payload) {
+    # Native programs write legitimate diagnostics to stderr. Windows PowerShell
+    # 5.1 must not promote those redirected lines to terminating errors.
+    $ErrorActionPreference = 'Continue'
+    $record = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Payload)) | ConvertFrom-Json
+    $logPath = [string]$record.logPath
+    $statusPath = [string]$record.statusPath
+    $logParent = Split-Path -Parent $logPath; [IO.Directory]::CreateDirectory($logParent) | Out-Null
+    $heading = @(
+        'IDATA test execution log'
+        "Started: $([DateTimeOffset]::Now.ToString('yyyy-MM-ddTHH:mm:ss.fffzzz'))"
+        "Run ID: $($record.runID)"
+        "Case ID: $($record.caseID)"
+        "Case: $($record.executionName)"
+        "Device: $($record.device)"
+        "Computer: $env:COMPUTERNAME"
+        "User: $env:USERNAME"
+        "Windows: $([Environment]::OSVersion.VersionString)"
+        "PowerShell: $($PSVersionTable.PSVersion)"
+        "Working directory: $($record.libraryPath)"
+        "IDATA executable: $($record.idataPath)"
+        "Runner: $($record.runnerPath)"
+        "Command: $($record.command)"
+        "Log file: $logPath"
+        '------------------------------------------------------------------------'
+        ''
+    ) -join "`r`n"
+    [IO.File]::WriteAllText($logPath, $heading, $Utf8)
+    [Console]::Out.Write($heading)
+    $exitCode = -1; $failure = ''
+    try {
+        Set-Location -LiteralPath ([string]$record.libraryPath)
+        & ([string]$record.idataPath) cli bundle run --path ([string]$record.runnerPath) -- ([string]$record.executionName) ([string]$record.inspectionMode) 2>&1 | ForEach-Object {
+            $line = [string]$_
+            [Console]::Out.WriteLine($line)
+            [IO.File]::AppendAllText($logPath, $line + "`r`n", $Utf8)
+        }
+        $exitCode = $LASTEXITCODE
+    } catch {
+        $failure = ($_ | Out-String).Trim()
+        [Console]::Error.WriteLine($failure)
+        [IO.File]::AppendAllText($logPath, $failure + "`r`n", $Utf8)
+    } finally {
+        $completion = "`r`nFinished: $([DateTimeOffset]::Now.ToString('yyyy-MM-ddTHH:mm:ss.fffzzz'))`r`nExit code: $exitCode`r`n"
+        [Console]::Out.Write($completion)
+        [IO.File]::AppendAllText($logPath, $completion, $Utf8)
+        Write-JsonFile $statusPath ([ordered]@{exitCode=$exitCode; error=$failure})
+    }
+    [Console]::Out.WriteLine("日志已保存：$logPath")
+    [void](Read-Host '测试已结束，按 Enter 关闭窗口')
+}
+
 function Execute-Run([string]$RunID) {
     $path = Get-RunPath $RunID; $run = Read-JsonFile $path $null
     $current = Get-Settings; $idata = Get-IDATAPath $current; $runner = Join-Path ([string]$run.libraryPath) 'run_testcase.py'
+    $logs = Join-Path $State ('logs\' + $RunID); [IO.Directory]::CreateDirectory($logs) | Out-Null
     foreach ($item in @($run.started)) {
         $latest = Read-JsonFile $path $null
         if ($latest.stopRequested) { Set-ObjectValue $item 'result' 'Interrupted'; Set-ObjectValue $item 'interruptionMessage' 'The test run was closed manually.'; Write-JsonFile $path $run; continue }
+        $caseID = ([string]$item.testCase) -replace '[^A-Za-z0-9._-]', '_'
+        $logPath = Join-Path $logs ($caseID + '.log'); $statusPath = Join-Path $logs ($caseID + '.status.json')
+        Set-ObjectValue $item 'logPath' $logPath
         Set-ObjectValue $item 'result' 'Running'; Write-JsonFile $path $run
         try {
-            $output = (& $idata cli bundle run --path $runner -- ([string]$item.executionName) ([string]$run.inspectionMode) 2>&1 | Out-String)
-            $code = $LASTEXITCODE
+            $payloadObject = [ordered]@{
+                runID=$RunID; caseID=[string]$item.testCase; executionName=[string]$item.executionName; device=[string]$run.device
+                inspectionMode=[int]$run.inspectionMode; libraryPath=[string]$run.libraryPath; idataPath=$idata; runnerPath=$runner
+                command=[string]$item.command; logPath=$logPath; statusPath=$statusPath
+            }
+            $payload = [Convert]::ToBase64String($Utf8.GetBytes(($payloadObject | ConvertTo-Json -Depth 10 -Compress)))
+            $escapedWorker = $PSCommandPath.Replace("'", "''")
+            $launch = "& '$escapedWorker' -VisibleRunPayload '$payload'"
+            $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($launch))
+            $process = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) -WorkingDirectory ([string]$run.libraryPath) -WindowStyle Normal -PassThru
+            Set-ObjectValue $item 'processId' $process.Id; Write-JsonFile $path $run
+            while (-not (Test-Path -LiteralPath $statusPath -PathType Leaf)) {
+                $latest = Read-JsonFile $path $null
+                if ($latest.stopRequested) {
+                    $taskkill = Get-SystemExecutable 'taskkill.exe'; & $taskkill /PID ([string]$process.Id) /T /F 2>$null | Out-Null
+                    $message = 'The test run was closed manually.'
+                    [IO.File]::AppendAllText($logPath, "`r`nExecution interrupted: $message`r`n", $Utf8)
+                    Write-JsonFile $statusPath ([ordered]@{exitCode=$null; interrupted=$true; error=$message})
+                    break
+                }
+                $process.Refresh()
+                if ($process.HasExited) {
+                    $message = 'The visible test window closed before it wrote a completion status.'
+                    if (-not (Test-Path -LiteralPath $logPath)) { [IO.File]::WriteAllText($logPath, $message + "`r`n", $Utf8) }
+                    else { [IO.File]::AppendAllText($logPath, "`r`n$message`r`n", $Utf8) }
+                    Write-JsonFile $statusPath ([ordered]@{exitCode=-1; error=$message})
+                    break
+                }
+                Set-ObjectValue $item 'consoleOutput' (Read-LogText $logPath); Write-JsonFile $path $run
+                Start-Sleep -Milliseconds 250
+            }
+            $status = Read-JsonFile $statusPath ([pscustomobject]@{exitCode=-1; error='The test status file could not be read.'})
+            $output = Read-LogText $logPath
+            $code = $status.exitCode
             $result = if ($code -eq 0) {'Passed'} else {'Failed'}
+            if ($status.interrupted) { $result = 'Interrupted' }
             Set-ObjectValue $item 'result' $result
             Set-ObjectValue $item 'exitCode' $code; Set-ObjectValue $item 'consoleOutput' $output
+            if ($status.error) { Set-ObjectValue $item 'error' ([string]$status.error) }
             if ($output -match '(?im)(?:report|report path|报告路径)\s*[:：]\s*(.+?\.html?)\s*$') { Set-ObjectValue $item 'reportLocation' $matches[1].Trim().Trim('"'); Set-ObjectValue $item 'reportUrl' 'available' }
-        } catch { Set-ObjectValue $item 'result' 'Failed'; Set-ObjectValue $item 'exitCode' -1; Set-ObjectValue $item 'consoleOutput' $_.Exception.Message }
+        } catch {
+            $failure = ($_ | Out-String).Trim()
+            if (-not (Test-Path -LiteralPath $logPath)) { [IO.File]::WriteAllText($logPath, $failure + "`r`n", $Utf8) }
+            else { [IO.File]::AppendAllText($logPath, "`r`n$failure`r`n", $Utf8) }
+            Set-ObjectValue $item 'result' 'Failed'; Set-ObjectValue $item 'exitCode' -1; Set-ObjectValue $item 'error' $failure; Set-ObjectValue $item 'consoleOutput' (Read-LogText $logPath)
+        }
         Write-JsonFile $path $run
     }
 }
@@ -290,11 +393,18 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
         $file=Get-Item -LiteralPath ([string]$item.reportLocation); if ($file.Length -gt 8388608) { throw 'Test report exceeds the viewing limit.' }
         return [ordered]@{contentBase64=[Convert]::ToBase64String([IO.File]::ReadAllBytes($file.FullName))}
     }
+    if ($Operation -match '^test-runs/(TR-[0-9]+)/logs/([^/]+)/content$') {
+        $run=Read-JsonFile (Get-RunPath $matches[1]) $null; $caseID=$matches[2]; $item=@($run.started | Where-Object {[string]$_.testCase -eq $caseID})[0]
+        if (-not $item -or -not (Test-Path -LiteralPath ([string]$item.logPath) -PathType Leaf)) { throw 'Test execution log was not found.' }
+        $file=Get-Item -LiteralPath ([string]$item.logPath); if ($file.Length -gt 8388608) { throw 'Test execution log exceeds the download limit.' }
+        return [ordered]@{contentBase64=[Convert]::ToBase64String([IO.File]::ReadAllBytes($file.FullName))}
+    }
     throw "Unsupported IDATA operation: $Method $Operation"
 }
 
 if ($BackgroundUpdate) { Install-TestCases; exit 0 }
 if ($BackgroundRun) { Execute-Run $BackgroundRun; exit 0 }
+if ($VisibleRunPayload) { Execute-VisibleRun $VisibleRunPayload; exit 0 }
 
 try {
     $operation = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($OperationB64))

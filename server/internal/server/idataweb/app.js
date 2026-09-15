@@ -257,6 +257,9 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Recording inspection": "录屏检测",
   "Inspection report": "查看检测报告",
   "Unable to open the inspection report.": "无法打开检测报告。",
+  "Download execution log": "下载执行日志",
+  "Unable to download the execution log.": "无法下载执行日志。",
+  "Log file": "日志文件",
   "Waiting": "等待中",
   "Test execution is in progress.": "测试正在执行，请等待结果更新。",
   "Close test run": "强制关闭任务",
@@ -1722,6 +1725,31 @@ const App = {
       }
     }
 
+    async function downloadTestLog(testCase) {
+      try {
+        const runId = encodeURIComponent(selectedTestRunId.value);
+        const caseId = encodeURIComponent(testCase.testCase);
+        const response = await window.idataFetch(`/api/test-runs/${runId}/logs/${caseId}/content`);
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({}));
+          throw new Error(result.error || t("Unable to download the execution log."));
+        }
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${selectedTestRunId.value}-${testCase.testCase}.log`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (error) {
+        ElementPlus.ElMessage({
+          message: error instanceof Error ? error.message : t("Unable to download the execution log."),
+          type: "error",
+        });
+      }
+    }
+
     async function closeTestRun() {
       if (!selectedTestRun.value || selectedTestRun.value.status !== "Running") {
         return;
@@ -2154,6 +2182,7 @@ const App = {
       openCreateDialog,
       openCreateSuiteDialog,
       openTestReport,
+      downloadTestLog,
       closeTestRun,
       pageSize,
       paginatedTestCases,
@@ -2794,6 +2823,17 @@ const App = {
                   >
                     {{ t('Inspection report') }} ↗
                   </a>
+                  <el-button
+                    v-if="testCase.logPath"
+                    text
+                    type="primary"
+                    @click="downloadTestLog(testCase)"
+                  >
+                    {{ t('Download execution log') }} ↓
+                  </el-button>
+                  <small v-if="testCase.logPath">
+                    {{ t('Log file') }}: {{ testCase.logPath }}
+                  </small>
                 </article>
               </div>
             </section>

@@ -79,7 +79,7 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 		t.Fatal("Windows launcher still tries to recapture direct console output")
 	}
 	worker := string(idataWindowsWorkerSource)
-	for _, expected := range []string{"__IDATA_SERVER_RESPONSE__", "System32\\' + $Name", "Get-SystemExecutable 'curl.exe'", "Get-SystemExecutable 'tar.exe'", "Get-ExternalExecutable 'hdc.exe'", "$columns.Count -lt 3", "$status.ToLower() -ne 'connected'", "const.product.model", "const.product.name", "const.product.os.dist.version", "const.product.devicetype", "osVersion=", "deviceType=", "Start-BackgroundUpdate", "IDATA.exe", "cli bundle run", "Handle-Request"} {
+	for _, expected := range []string{"__IDATA_SERVER_RESPONSE__", "System32\\' + $Name", "Get-SystemExecutable 'curl.exe'", "Get-SystemExecutable 'tar.exe'", "Get-ExternalExecutable 'hdc.exe'", "$columns.Count -lt 3", "$status.ToLower() -ne 'connected'", "const.product.model", "const.product.name", "const.product.os.dist.version", "const.product.devicetype", "osVersion=", "deviceType=", "Start-BackgroundUpdate", "VisibleRunPayload", "Execute-VisibleRun", "WindowStyle Normal", "IDATA test execution log", "logs\\' + $RunID", "IDATA.exe", "cli bundle run", "Handle-Request"} {
 		if !strings.Contains(worker, expected) {
 			t.Fatalf("Server-owned worker does not contain %q", expected)
 		}
@@ -219,6 +219,58 @@ func TestIDATARoundTripAndDisconnect(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Fatal("pending operation leaked")
 		}
+	}
+}
+
+func TestIDATAExecutionLogDownload(t *testing.T) {
+	app := newTestServer(t)
+	server := httptest.NewServer(app.Handler())
+	defer server.Close()
+	header := http.Header{"Authorization": []string{"Bearer agent-test-token"}}
+	agent, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/ws/agent", header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer agent.Close()
+	_ = agent.WriteJSON(protocol.Message{Type: protocol.TypeHello, ProtocolVersion: protocol.Version, ClientID: "pc", OS: "windows", Capabilities: []string{"server_commands_v1", "command_stdin_v1"}})
+	deadline := time.Now().Add(time.Second)
+	for app.hub.get("pc") == nil && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+
+	type downloadResult struct {
+		status, contentType, disposition, body string
+	}
+	done := make(chan downloadResult, 1)
+	go func() {
+		request, _ := http.NewRequest("GET", server.URL+"/api/v1/clients/pc/idata/test-runs/TR-1/logs/1/content", nil)
+		request.Header.Set("Authorization", "Bearer admin-test-token")
+		response, requestErr := http.DefaultClient.Do(request)
+		if requestErr != nil {
+			done <- downloadResult{}
+			return
+		}
+		defer response.Body.Close()
+		body, _ := io.ReadAll(response.Body)
+		done <- downloadResult{fmt.Sprint(response.StatusCode), response.Header.Get("Content-Type"), response.Header.Get("Content-Disposition"), string(body)}
+	}()
+
+	_ = agent.SetReadDeadline(time.Now().Add(time.Second))
+	var command protocol.Message
+	if err := agent.ReadJSON(&command); err != nil {
+		t.Fatal(err)
+	}
+	logText := "启动日志\r\nexit code: 7\r\n"
+	content := base64.StdEncoding.EncodeToString([]byte(logText))
+	envelope := base64.StdEncoding.EncodeToString([]byte(`{"ok":true,"data":{"contentBase64":"` + content + `"}}`))
+	_ = agent.WriteJSON(protocol.Message{Type: protocol.TypeResult, ProtocolVersion: protocol.Version, RequestID: command.RequestID, ExitCode: 0, Stdout: "__IDATA_SERVER_RESPONSE__" + envelope})
+	select {
+	case result := <-done:
+		if result.status != "200" || result.contentType != "text/plain; charset=utf-8" || !strings.Contains(result.disposition, "TR-1-1.log") || result.body != logText {
+			t.Fatalf("unexpected download: %+v", result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("log download did not complete")
 	}
 }
 
