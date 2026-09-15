@@ -227,10 +227,33 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
     if ($Operation -eq 'devices') {
         try { $hdc = Get-ExternalExecutable 'hdc.exe'; $output = @(& $hdc list targets -v 2>&1); $code = $LASTEXITCODE }
         catch { return [ordered]@{devices=@(); error=$_.Exception.Message} }
+        if ($code -ne 0) {
+            $detail = ($output | ForEach-Object { [string]$_ }) -join "`n"
+            if ([string]::IsNullOrWhiteSpace($detail)) { $detail = "exit code $code" }
+            return [ordered]@{devices=@(); error="HDC device search failed: $detail"}
+        }
         $devices = @()
-        foreach ($line in $output) { $columns = @(([string]$line).Trim() -split '\s+'); if ($columns.Count -and $columns[0].ToLower() -notin @('empty','[empty]','')) { $status = if ($columns.Count -gt 2) {$columns[2]} else {'Connected'}; $devices += [ordered]@{id=$columns[0]; status=$status} } }
-        $deviceError = if ($code -eq 0) {$null} else {($output -join "`n")}
-        return [ordered]@{devices=@($devices); error=$deviceError}
+        $detailCommand = 'param get const.product.model; param get const.product.name; param get const.product.os.dist.version; param get const.product.devicetype'
+        foreach ($line in $output) {
+            $columns = @(([string]$line).Trim() -split '\s+')
+            if ($columns.Count -lt 3 -or $columns[0].ToLower() -in @('empty','[empty]','')) { continue }
+            $targetID = [string]$columns[0]
+            $status = [string]$columns[2]
+            if ($status.ToLower() -ne 'connected' -or $targetID -notmatch '^[A-Za-z0-9._:-]+$') { continue }
+            $values = @()
+            try {
+                $detailOutput = @(& $hdc -t $targetID shell $detailCommand 2>$null)
+                if ($LASTEXITCODE -eq 0) { $values = @($detailOutput | ForEach-Object { ([string]$_).Trim() }) }
+            } catch { $values = @() }
+            $devices += [ordered]@{
+                id=$targetID; status=$status
+                model=$(if ($values.Count -gt 0) {$values[0]} else {''})
+                name=$(if ($values.Count -gt 1) {$values[1]} else {''})
+                osVersion=$(if ($values.Count -gt 2) {$values[2]} else {''})
+                deviceType=$(if ($values.Count -gt 3) {$values[3]} else {''})
+            }
+        }
+        return [ordered]@{devices=@($devices); error=$null}
     }
     if ($Operation -eq 'test-cases') { return (Find-TestCases (Get-Settings)) }
     if ($Operation -eq 'test-cases/update') {
