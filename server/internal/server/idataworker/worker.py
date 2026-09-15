@@ -271,7 +271,7 @@ def handle(operation, method, body):
             case = available.get(case_id)
             if case is None:
                 raise RuntimeError(f"Unknown test case selection: {case_id}")
-            command = [str(executable), "cli", "bundle", "run", "--path", str(runner), "--", case["executionName"], str(mode), "--sn", device]
+            command = [str(executable), "cli", "bundle", "run", "--path", str(runner), "--", case["executionName"], str(mode), device]
             started.append({"testCase": case_id, "testCaseName": case["executionName"], "inspectionMode": mode, "processId": None, "command": subprocess.list2cmdline(command), "executionCommand": command, "result": "Pending", "consoleOutput": "", "exitCode": None, "reportUrl": None, "reportLocation": None, "checks": []})
         run = {"id": run_id, "title": str(body.get("name", "")).strip(), "device": device, "inspectionMode": mode, "startedAt": datetime.now().astimezone().isoformat(timespec="seconds"), "libraryPath": str(root), "started": started}
         RUNS.mkdir(parents=True, exist_ok=True)

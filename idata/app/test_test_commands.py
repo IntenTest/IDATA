@@ -14,7 +14,7 @@ class CommandTests(unittest.TestCase):
             "C:/Program Files/IDATA/IDATA.exe", "C:/Test Library/run_testcase.py",
             "中文 case", 2, "FMR 设备"),
             ["C:/Program Files/IDATA/IDATA.exe", "cli", "bundle", "run",
-             "--path", "C:/Test Library/run_testcase.py", "--", "中文 case", "2", "--sn", "FMR 设备"])
+             "--path", "C:/Test Library/run_testcase.py", "--", "中文 case", "2", "FMR 设备"])
 
     def test_launch_on_both_platforms(self):
         test = ["C:/Program Files/IDATA/IDATA.exe", "cli", "bundle", "run",

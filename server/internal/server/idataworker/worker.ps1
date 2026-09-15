@@ -231,7 +231,7 @@ function Execute-VisibleRun([string]$Payload) {
     $exitCode = -1; $failure = ''
     try {
         Set-Location -LiteralPath ([string]$record.libraryPath)
-        & ([string]$record.idataPath) cli bundle run --path ([string]$record.runnerPath) -- ([string]$record.executionName) ([string]$record.inspectionMode) --sn ([string]$record.device) 2>&1 | ForEach-Object {
+        & ([string]$record.idataPath) cli bundle run --path ([string]$record.runnerPath) -- ([string]$record.executionName) ([string]$record.inspectionMode) ([string]$record.device) 2>&1 | ForEach-Object {
             $line = [string]$_
             [Console]::Out.WriteLine($line)
             [IO.File]::AppendAllText($logPath, $line + "`r`n", $Utf8)
@@ -380,7 +380,7 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
         foreach ($caseID in @($selected | Select-Object -Unique)) {
             if (-not $available.ContainsKey([string]$caseID)) { throw "Unknown test case selection: $caseID" }
             $case = $available[[string]$caseID]
-            $started += [ordered]@{testCase=[string]$caseID; testCaseName=$case.executionName; executionName=$case.executionName; inspectionMode=$mode; processId=$null; command="$idata cli bundle run --path $runner -- $($case.executionName) $mode --sn $device"; result='Pending'; consoleOutput=''; exitCode=$null; reportUrl=$null; reportLocation=$null; checks=@()}
+            $started += [ordered]@{testCase=[string]$caseID; testCaseName=$case.executionName; executionName=$case.executionName; inspectionMode=$mode; processId=$null; command="$idata cli bundle run --path $runner -- $($case.executionName) $mode $device"; result='Pending'; consoleOutput=''; exitCode=$null; reportUrl=$null; reportLocation=$null; checks=@()}
         }
         $run = [ordered]@{id=$runID; title=[string]$Body.name; device=$device; inspectionMode=$mode; startedAt=[DateTimeOffset]::Now.ToString('yyyy-MM-ddTHH:mm:sszzz'); libraryPath=[string]$current.testCaseLibraryPath; stopRequested=$false; started=$started}
         Write-JsonFile (Get-RunPath $runID) $run; Start-BackgroundRun $runID
