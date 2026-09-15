@@ -58,7 +58,7 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 		runes[index] = rune(binary.LittleEndian.Uint16(raw[index*2:]))
 	}
 	script := string(runes)
-	for _, expected := range []string{"powershell.exe", ".ps1", "ReadToEnd", "UTF8Encoding($true)", "__IDATA_SERVER_RESPONSE__", "OperationB64"} {
+	for _, expected := range []string{"& $worker", ".ps1", "ReadToEnd", "UTF8Encoding($true)", "__IDATA_SERVER_RESPONSE__", "OperationB64"} {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("PowerShell payload does not contain %q", expected)
 		}
@@ -72,8 +72,11 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 	if strings.Contains(script, "IDATA_COMMAND_PYTHON") {
 		t.Fatal("Windows command still depends on a Client-provided Python runtime")
 	}
+	if strings.Contains(script, "& powershell.exe") || strings.Contains(script, "-File $worker") {
+		t.Fatal("Windows launcher still creates a nested PowerShell process")
+	}
 	worker := string(idataWindowsWorkerSource)
-	for _, expected := range []string{"curl.exe", "tar.exe", "Start-BackgroundUpdate", "IDATA.exe", "cli bundle run", "Handle-Request"} {
+	for _, expected := range []string{"System32\\' + $Name", "Get-SystemExecutable 'curl.exe'", "Get-SystemExecutable 'tar.exe'", "Get-ExternalExecutable 'hdc.exe'", "Start-BackgroundUpdate", "IDATA.exe", "cli bundle run", "Handle-Request"} {
 		if !strings.Contains(worker, expected) {
 			t.Fatalf("Server-owned worker does not contain %q", expected)
 		}

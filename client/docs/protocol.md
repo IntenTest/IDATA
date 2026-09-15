@@ -48,6 +48,11 @@ saves the new library path. The Server also constructs every
 `IDATA.exe cli bundle run --path ...` test command and sends it through the same
 generic command channel.
 
+The supported corporate Windows baseline is Simplified Chinese Windows 11 x64
+with its inbox Windows PowerShell 5.1. The Client itself remains a generic,
+current-user command executor; it does not require PowerShell 7 or Python and does
+not contain Windows-version-specific IDATA business logic.
+
 Browser launch accepts `idata://connect?server=HOST&port=PORT&secure=0|1`.
 HOST may be an ASCII DNS name, IPv4, or IPv6; PORT is mandatory in 1..65535.
 The optional `path` parameter supplies a deployment-prefixed agent path such as

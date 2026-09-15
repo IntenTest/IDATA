@@ -3,6 +3,12 @@
 Windows 桌面端及 macOS/Linux 命令行 agent。它通过可见窗口或前台终端主动建立出站 WebSocket；也可在数字 loopback 地址上
 提供可关闭的 Client Token 备用配对接口，不监听局域网地址。
 
+公司内网正式支持基线为简体中文 Windows 11 x64。Client 以当前用户权限运行，兼容系统
+自带的 Windows PowerShell 5.1 和 `cmd.exe`，不要求安装 PowerShell 7、Python 或管理员权限。
+Server 下发的管理 worker 会使用带 BOM 的 UTF-8 文件，避免中文系统的 GBK/936 默认代码页
+把脚本中的中文标识符解析损坏。Windows 自带的 `curl.exe`、`tar.exe` 由 Server worker 从
+`%SystemRoot%\System32` 定位；`hdc.exe`、`IDATA.exe`、驱动及测试依赖仍需在执行电脑安装。
+
 ## 构建
 
 在任意 Go 开发机交叉编译无控制台窗口的 Windows EXE：

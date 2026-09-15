@@ -65,6 +65,22 @@ function Set-UpdateStatus([string]$Status, [string]$Message) {
     Write-JsonFile $UpdatePath ([ordered]@{status=$Status; message=$Message})
 }
 
+function Get-SystemExecutable([string]$Name) {
+    if (-not [string]::IsNullOrWhiteSpace($env:SystemRoot)) {
+        $systemPath = Join-Path $env:SystemRoot ('System32\' + $Name)
+        if (Test-Path -LiteralPath $systemPath -PathType Leaf) { return $systemPath }
+    }
+    $command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($command) { return $command.Source }
+    throw "Required Windows executable was not found: $Name"
+}
+
+function Get-ExternalExecutable([string]$Name) {
+    $command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($command) { return $command.Source }
+    throw "Required executable is not available in PATH: $Name"
+}
+
 function Find-TestCases($Current) {
     $root = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables([string]$Current.testCaseLibraryPath))
     $mapping = Join-Path $root '中英文映射.csv'
@@ -98,13 +114,16 @@ function Install-TestCases {
         $stage = Join-Path $parent ('.testcases-' + [guid]::NewGuid().ToString('N')); [IO.Directory]::CreateDirectory($stage) | Out-Null
         $archive = Join-Path $stage 'Testcases.tar.gz'; $extracted = Join-Path $stage 'extracted'
         Set-UpdateStatus 'running' 'Downloading test case archive on the execution PC…'
-        & curl.exe --fail --location --silent --show-error --connect-timeout 30 --max-time 600 --max-filesize 2147483648 --proto '=http,https' --proto-redir '=http,https' --output $archive $url.AbsoluteUri
+        $curl = Get-SystemExecutable 'curl.exe'
+        $tar = Get-SystemExecutable 'tar.exe'
+        & $curl --fail --location --silent --show-error --connect-timeout 30 --max-time 600 --output $archive $url.AbsoluteUri
         if ($LASTEXITCODE -ne 0) { throw 'Archive download failed. Check the URL and network connection.' }
+        if (-not (Test-Path -LiteralPath $archive -PathType Leaf) -or (Get-Item -LiteralPath $archive).Length -gt 2147483648) { throw 'The test case archive is missing or exceeds the 2 GB limit.' }
         Set-UpdateStatus 'running' 'Extracting and validating test cases…'
-        $entries = @(& tar.exe -tzf $archive); if ($LASTEXITCODE -ne 0) { throw 'The test case archive could not be read.' }
+        $entries = @(& $tar -tzf $archive); if ($LASTEXITCODE -ne 0) { throw 'The test case archive could not be read.' }
         if ($entries.Count -gt 100000 -or @($entries | Where-Object { $_ -match '(^[/\\])|(^|[/\\])\.\.([/\\]|$)|:' }).Count) { throw 'The archive contains an unsafe path or too many files.' }
         [IO.Directory]::CreateDirectory($extracted) | Out-Null
-        & tar.exe -xzf $archive -C $extracted; if ($LASTEXITCODE -ne 0) { throw 'The test case archive could not be extracted.' }
+        & $tar -xzf $archive -C $extracted; if ($LASTEXITCODE -ne 0) { throw 'The test case archive could not be extracted.' }
         $mappings = @(Get-ChildItem -LiteralPath $extracted -Recurse -File -Filter '中英文映射.csv')
         if ($mappings.Count -ne 1) { throw 'The archive must contain exactly one test case mapping CSV.' }
         $source = $mappings[0].Directory.FullName
@@ -134,8 +153,10 @@ function Start-BackgroundUpdate {
 
 function Get-IDATAPath($Current) {
     $raw = ([string]$Current.idataExecutablePath).Trim()
+    if ([string]::IsNullOrWhiteSpace($raw)) { throw 'Set the IDATA executable path in Settings.' }
     if ([IO.Path]::IsPathRooted($raw)) { return [IO.Path]::GetFullPath($raw) }
     if ($raw.Replace('\','/').ToLower() -eq '../idata.exe') { $raw = 'IDATA.exe' }
+    if ([string]::IsNullOrWhiteSpace($env:IDATA_CLIENT_EXECUTABLE_DIRECTORY)) { throw 'The Client executable directory was not provided.' }
     return [IO.Path]::GetFullPath((Join-Path $env:IDATA_CLIENT_EXECUTABLE_DIRECTORY $raw))
 }
 
@@ -204,7 +225,7 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
         return [ordered]@{modelConfig=(Read-JsonFile $ModelPath ([ordered]@{api_base=''; api_key=''; model_name=''}))}
     }
     if ($Operation -eq 'devices') {
-        try { $output = @(& hdc list targets -v 2>&1); $code = $LASTEXITCODE }
+        try { $hdc = Get-ExternalExecutable 'hdc.exe'; $output = @(& $hdc list targets -v 2>&1); $code = $LASTEXITCODE }
         catch { return [ordered]@{devices=@(); error=$_.Exception.Message} }
         $devices = @()
         foreach ($line in $output) { $columns = @(([string]$line).Trim() -split '\s+'); if ($columns.Count -and $columns[0].ToLower() -notin @('empty','[empty]','')) { $status = if ($columns.Count -gt 2) {$columns[2]} else {'Connected'}; $devices += [ordered]@{id=$columns[0]; status=$status} } }

@@ -2,9 +2,17 @@
 
 The IDATA Vue/Element Plus interface is hosted by the Go `idata-server`. The Go
 `idata-client` maintains the outbound WebSocket connection from each execution PC.
-IDATA's Python worker on that PC builds and runs the original test commands.
+The Server generates the management worker and all concrete update/test commands;
+the Client only executes generic commands and returns their results.
 
-Browser → idata-server → outbound client WebSocket → local IDATA worker → local commands / HDC devices.
+Browser → idata-server → outbound client WebSocket → generic command executor → local commands / HDC devices.
+
+The supported corporate Windows baseline is Simplified Chinese Windows 11 x64
+with the inbox Windows PowerShell 5.1. PowerShell 7 and a system Python installation
+are not required for Server management operations. Server workers are written as
+UTF-8 with BOM and run without a nested PowerShell process, so Chinese source text
+does not depend on the machine's active code page and errors are not wrapped as
+PowerShell CLIXML. The Client runs as the current user without elevation.
 
 ## Current deployment
 
@@ -55,12 +63,11 @@ Client credentials are saved beside its executable in `bin/idata-client.json`.
 Keep this file private; do not distribute an installation directory after pairing
 without excluding credentials and local logs/settings.
 
-The official Windows Client EXE includes the execution worker and its private
-Python runtime. Start the EXE once, then use the website launch link. It prepares
-the local service automatically before connecting; a separate project checkout
-or system Python is not required for this service. Worker files and persistent
-settings live under `%LOCALAPPDATA%\IDATA\execution-service`. HDC, device drivers,
-and the actual test interpreter, dependencies, and scripts remain part of the PC's
+The official Windows Client EXE contains no IDATA business worker or private Python
+runtime. Start the EXE once, then use the website launch link. Server-supplied
+management workers keep persistent settings under
+`%USERPROFILE%\.idata\server-command-runtime`. HDC, IDATA.exe, device drivers, and
+the actual test interpreter, dependencies, and scripts remain part of the PC's
 test environment. Use absolute paths in the web Settings page.
 
 ## Preserved functions and integration changes
@@ -111,8 +118,8 @@ routing, disconnect cleanup, request limits, and local worker forwarding.
 In Settings, set **Test case archive URL** (saved automatically). The default is
 `http://10.90.65.189:54322/Testcases.tar.gz`. Select **Update test case library**
 on the Test Cases page. The selected execution PC downloads the archive using
-curl.exe on Windows or curl on macOS; Python extracts UTF-8 filenames without
-requiring a separate tar installation. No shell command is constructed from the URL.
+the inbox `curl.exe` and extracts it with the inbox `tar.exe` on Windows. No shell
+command is constructed from the URL.
 
 The worker stages and validates the archive, then replaces
 `%USERPROFILE%\.idata\newest_testcases` on Windows (`~/.idata/newest_testcases` on
@@ -128,7 +135,8 @@ The library path is saved automatically. Test runs always use `run_testcase.py`
 from the root of that library. The page displays progress and reloads cases through the client.
 If the browser closes, the update continues on the PC; click Update again while
 it is running to resume watching. Client or worker shutdown interrupts the update.
-Deploy the updated server, client executable, and Python worker together.
+The Windows management worker is embedded in the Server release and requires no
+separate deployment.
 
 Regression check: `python3 -m unittest discover -s idata/app -p 'test_*.py'`.
 

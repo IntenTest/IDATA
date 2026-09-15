@@ -21,9 +21,10 @@ Arbitrary URLs, query parameters, static-file paths, and other methods are rejec
 by the Server before command generation. The Client allows four concurrent commands,
 commands up to 128 KiB and generic stdin payloads up to 1 MiB, and enforces the
 supplied timeout and output limit. Server-owned workers travel through stdin rather
-than the Windows command line. On Windows the worker writes its JSON envelope to a
-unique temporary result file; the Server-generated wrapper returns it as a marked
-ASCII Base64 value, independent of IDATA.exe console output behavior.
+than the Windows command line. On Windows, the Server-generated launcher writes the
+worker with a UTF-8 BOM and invokes it directly in the existing Windows PowerShell
+5.1 process. The worker returns a marked ASCII Base64 envelope on stdout; it does
+not create a result file or launch a nested PowerShell process.
 Long-running tests return after launch and are polled separately. Disconnecting the
 browser does not cancel a test; the explicit close operation does. If launch status
 is uncertain after a connection failure, inspect test runs before retrying.
@@ -48,6 +49,16 @@ UTF-8 archive paths and the mapping CSV, replaces ~/.idata/newest_testcases, and
 saves the new library path. The Server also constructs every
 `IDATA.exe cli bundle run --path ...` test command and sends it through the same
 generic command channel.
+
+The supported corporate Windows baseline is Simplified Chinese Windows 11 x64,
+running as the current non-administrator user with the inbox Windows PowerShell
+5.1, `cmd.exe`, `curl.exe`, and `tar.exe`. PowerShell 7 (`pwsh`) and a system Python
+installation are not required for management operations. `hdc.exe`, `IDATA.exe`,
+device drivers, and test dependencies remain execution-PC prerequisites. System
+executables are resolved from `%SystemRoot%\System32` before `PATH`; `hdc.exe` is
+resolved from `PATH`. Server workers are always materialized as UTF-8 with BOM so
+Chinese identifiers and messages are parsed independently of the active OEM or
+ANSI code page.
 
 Browser launch accepts `idata://connect?server=HOST&port=PORT&secure=0|1`.
 HOST may be an ASCII DNS name, IPv4, or IPv6; PORT is mandatory in 1..65535.
