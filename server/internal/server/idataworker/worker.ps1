@@ -7,7 +7,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $Utf8 = New-Object System.Text.UTF8Encoding($false)
+[Console]::InputEncoding = $Utf8
+[Console]::OutputEncoding = $Utf8
 $State = Join-Path $env:USERPROFILE '.idata\server-command-runtime'
 $Library = Join-Path $env:USERPROFILE '.idata\newest_testcases'
 $SettingsPath = Join-Path $State 'settings.json'
@@ -55,7 +58,7 @@ function Set-ObjectValue($Object, [string]$Name, $Value) {
 }
 
 function Get-UpdateStatus {
-    return Read-JsonFile $UpdatePath ([ordered]@{status='idle'; message='Ready to update the test case library.'})
+    return (Read-JsonFile $UpdatePath ([ordered]@{status='idle'; message='Ready to update the test case library.'}))
 }
 
 function Set-UpdateStatus([string]$Status, [string]$Message) {
@@ -139,7 +142,7 @@ function Get-IDATAPath($Current) {
 function Get-RunPath([string]$RunID) {
     if ($RunID -notmatch '^TR-[0-9]+$') { throw 'Invalid test run ID.' }
     $runs = Join-Path $State 'runs'; [IO.Directory]::CreateDirectory($runs) | Out-Null
-    return Join-Path $runs ($RunID + '.json')
+    return (Join-Path $runs ($RunID + '.json'))
 }
 
 function Serialize-Run($Run) {
@@ -208,7 +211,7 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
         $deviceError = if ($code -eq 0) {$null} else {($output -join "`n")}
         return [ordered]@{devices=@($devices); error=$deviceError}
     }
-    if ($Operation -eq 'test-cases') { return Find-TestCases (Get-Settings) }
+    if ($Operation -eq 'test-cases') { return (Find-TestCases (Get-Settings)) }
     if ($Operation -eq 'test-cases/update') {
         $status = Get-UpdateStatus
         if ($Method -eq 'POST' -and $status.status -ne 'running') { Set-UpdateStatus 'running' 'Preparing test case update…'; Start-BackgroundUpdate; $status = Get-UpdateStatus }
@@ -234,9 +237,9 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
         }
         $run = [ordered]@{id=$runID; title=[string]$Body.name; device=[string]$Body.device; inspectionMode=$mode; startedAt=[DateTimeOffset]::Now.ToString('yyyy-MM-ddTHH:mm:sszzz'); libraryPath=[string]$current.testCaseLibraryPath; stopRequested=$false; started=$started}
         Write-JsonFile (Get-RunPath $runID) $run; Start-BackgroundRun $runID
-        return Serialize-Run $run
+        return (Serialize-Run $run)
     }
-    if ($Operation -match '^test-runs/(TR-[0-9]+)/close$') { $path=Get-RunPath $matches[1]; $run=Read-JsonFile $path $null; Set-ObjectValue $run 'stopRequested' $true; Write-JsonFile $path $run; return Serialize-Run $run }
+    if ($Operation -match '^test-runs/(TR-[0-9]+)/close$') { $path=Get-RunPath $matches[1]; $run=Read-JsonFile $path $null; Set-ObjectValue $run 'stopRequested' $true; Write-JsonFile $path $run; return (Serialize-Run $run) }
     if ($Operation -match '^test-runs/(TR-[0-9]+)/reports/([^/]+)/content$') {
         $run=Read-JsonFile (Get-RunPath $matches[1]) $null; $caseID=$matches[2]; $item=@($run.started | Where-Object {[string]$_.testCase -eq $caseID})[0]
         if (-not $item -or -not (Test-Path -LiteralPath ([string]$item.reportLocation) -PathType Leaf)) { throw 'Test report was not found.' }
