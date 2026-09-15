@@ -56,7 +56,7 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 		runes[index] = rune(binary.LittleEndian.Uint16(raw[index*2:]))
 	}
 	script := string(runes)
-	for _, expected := range []string{"IDATA_CLIENT_EXECUTABLE_DIRECTORY", "IDATA.exe", "cli bundle run", "worker.py", "ReadToEnd"} {
+	for _, expected := range []string{"IDATA_CLIENT_EXECUTABLE_DIRECTORY", "IDATA_SERVER_WORKER_PATH", "IDATA.exe", "cli bundle run", "worker.py", "ReadToEnd", "Out-String", "Start-Sleep"} {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("PowerShell payload does not contain %q", expected)
 		}
@@ -81,9 +81,14 @@ func TestDecodeIDATAWorkerResponseIgnoresLauncherOutput(t *testing.T) {
 }
 
 func TestWorkerWritesResultWhenBundleUsesCustomModuleName(t *testing.T) {
-	resultPath := t.TempDir() + "/response.json"
-	code := `import sys; source=sys.stdin.buffer.read(); sys.argv=["worker","__request",sys.argv[1],"settings","GET",""]; exec(compile(source,"worker.py","exec"),{"__name__":"idata_bundle","__file__":"worker.py","SERVER_WORKER_SOURCE":source})`
-	command := exec.Command("python3", "-c", code, resultPath)
+	directory := t.TempDir()
+	workerPath := directory + "/worker.py"
+	resultPath := directory + "/response.json"
+	if err := os.WriteFile(workerPath, idataWorkerSource, 0600); err != nil {
+		t.Fatal(err)
+	}
+	code := `import sys; source=sys.stdin.buffer.read(); sys.argv=["worker","__request",sys.argv[1],sys.argv[2],"settings","GET",""]; exec(compile(source,"worker.py","exec"),{"__name__":"idata_bundle"})`
+	command := exec.Command("python3", "-c", code, resultPath, workerPath)
 	command.Stdin = bytes.NewReader(idataWorkerSource)
 	command.Env = append(os.Environ(), "HOME="+t.TempDir())
 	if output, err := command.CombinedOutput(); err != nil {

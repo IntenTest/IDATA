@@ -15,7 +15,18 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-SERVER_WORKER_SOURCE = globals().get("SERVER_WORKER_SOURCE") or Path(__file__).read_bytes()
+_worker_path_argument = ""
+if len(sys.argv) >= 4 and sys.argv[1] == "__request":
+    _worker_path_argument = sys.argv[3]
+elif len(sys.argv) >= 3 and sys.argv[1] in {"__execute_update", "__execute_run"}:
+    _worker_path_argument = sys.argv[2]
+_worker_path_value = os.environ.get("IDATA_SERVER_WORKER_PATH") or _worker_path_argument or globals().get("__file__", "")
+WORKER_PATH = Path(_worker_path_value).resolve() if _worker_path_value else None
+SERVER_WORKER_SOURCE = globals().get("SERVER_WORKER_SOURCE")
+if SERVER_WORKER_SOURCE is None:
+    if WORKER_PATH is None or not WORKER_PATH.is_file():
+        raise RuntimeError("The Server worker path was not provided to IDATA.")
+    SERVER_WORKER_SOURCE = WORKER_PATH.read_bytes()
 STATE = Path.home() / ".idata" / "server-command-runtime"
 SETTINGS = STATE / "settings.json"
 RUNS = STATE / "runs"
@@ -221,7 +232,11 @@ def handle(operation, method, body):
         if not executable.is_file():
             raise RuntimeError("IDATA.exe was not found.")
         update_status("running", "Preparing test case update…")
-        subprocess.Popen([str(executable), "cli", "bundle", "run", "--path", str(Path(__file__).resolve()), "--", "__execute_update"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+        worker = WORKER_PATH or (STATE / "worker.py")
+        if not worker.is_file():
+            worker.parent.mkdir(parents=True, exist_ok=True)
+            worker.write_bytes(SERVER_WORKER_SOURCE)
+        subprocess.Popen([str(executable), "cli", "bundle", "run", "--path", str(worker), "--", "__execute_update", str(worker)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
         return update_status()
     if operation == "test-runs" and method == "POST":
         selected = body.get("testCases")
@@ -247,7 +262,7 @@ def handle(operation, method, body):
         atomic_json(run_path(run_id), run)
         worker = STATE / "worker.py"
         worker.write_bytes(SERVER_WORKER_SOURCE)
-        subprocess.Popen([str(executable), "cli", "bundle", "run", "--path", str(worker), "--", "__execute_run", run_id], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+        subprocess.Popen([str(executable), "cli", "bundle", "run", "--path", str(worker), "--", "__execute_run", str(worker), run_id], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
         return serialize_run(run)
     if operation == "test-runs" and method == "GET":
         runs = [serialize_run(json.loads(path.read_text(encoding="utf-8"))) for path in RUNS.glob("TR-*.json")] if RUNS.is_dir() else []
@@ -270,13 +285,13 @@ def main():
         execute_update()
         return
     if len(sys.argv) >= 2 and sys.argv[1] == "__execute_run":
-        execute_run(sys.argv[2])
+        execute_run(sys.argv[3])
         return
     result_path = None
     offset = 1
     if len(sys.argv) >= 2 and sys.argv[1] == "__request":
         result_path = Path(sys.argv[2])
-        offset = 3
+        offset = 4
     operation, method = sys.argv[offset], sys.argv[offset + 1]
     encoded_payload = sys.argv[offset + 2] if len(sys.argv) > offset + 2 else ""
     payload = json.loads(base64.b64decode(encoded_payload)) if encoded_payload else {}
