@@ -248,8 +248,7 @@ function Execute-VisibleRun([string]$Payload) {
         Write-JsonFile $statusPath ([ordered]@{exitCode=$exitCode; error=$failure})
     }
     [Console]::Out.WriteLine("日志已保存：$logPath")
-    [Console]::Out.WriteLine('测试已结束，窗口将在 2 秒后自动关闭并继续下一个用例。')
-    Start-Sleep -Seconds 2
+    [Console]::Out.WriteLine('测试已结束，窗口将自动关闭。')
 }
 
 function Execute-Run([string]$RunID) {
@@ -297,9 +296,6 @@ function Execute-Run([string]$RunID) {
                 Start-Sleep -Milliseconds 250
             }
             $status = Read-JsonFile $statusPath ([pscustomobject]@{exitCode=-1; error='The test status file could not be read.'})
-            # A completed console closes itself. Wait briefly so test cases remain
-            # strictly sequential and the next console never depends on Enter.
-            try { [void]$process.WaitForExit(5000) } catch { }
             $output = Read-LogText $logPath
             $code = $status.exitCode
             $result = if ($code -eq 0) {'Passed'} else {'Failed'}
