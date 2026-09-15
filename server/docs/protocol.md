@@ -41,6 +41,9 @@ UTF-8 under `%USERPROFILE%\.idata\server-command-runtime\logs\<run-id>` and mirr
 into the run details while execution is active. Authorized users can download each
 complete log through `/api/test-runs/{run}/logs/{case}/content`. Closing a run ends
 the visible process tree and records the interruption in the same log.
+When a case finishes, its console displays the result for two seconds and closes
+automatically. The background worker waits for that console to exit before launching
+the next selected case, so multi-case runs remain sequential and never require Enter.
 
 The Client returns `result` with the matching request ID, exit code, stdout, stderr,
 duration, truncation flags, timeout state, or executor error. Writers use the existing WebSocket lock.

@@ -79,7 +79,7 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 		t.Fatal("Windows launcher still tries to recapture direct console output")
 	}
 	worker := string(idataWindowsWorkerSource)
-	for _, expected := range []string{"__IDATA_SERVER_RESPONSE__", "System32\\' + $Name", "Get-SystemExecutable 'curl.exe'", "Get-SystemExecutable 'tar.exe'", "Get-ExternalExecutable 'hdc.exe'", "$columns.Count -lt 3", "$status.ToLower() -ne 'connected'", "const.product.model", "const.product.name", "const.product.os.dist.version", "const.product.devicetype", "osVersion=", "deviceType=", "Start-BackgroundUpdate", "VisibleRunPayload", "Execute-VisibleRun", "WindowStyle Normal", "IDATA test execution log", "logs\\' + $RunID", "([string]$record.inspectionMode) ([string]$record.device)", "if ($Run.stopRequested) {'Interrupted'}", "function Stop-Run", "Persist the stopped state before attempting any process or log cleanup", "IDATA.exe", "cli bundle run", "Handle-Request"} {
+	for _, expected := range []string{"__IDATA_SERVER_RESPONSE__", "System32\\' + $Name", "Get-SystemExecutable 'curl.exe'", "Get-SystemExecutable 'tar.exe'", "Get-ExternalExecutable 'hdc.exe'", "$columns.Count -lt 3", "$status.ToLower() -ne 'connected'", "const.product.model", "const.product.name", "const.product.os.dist.version", "const.product.devicetype", "osVersion=", "deviceType=", "Start-BackgroundUpdate", "VisibleRunPayload", "Execute-VisibleRun", "WindowStyle Normal", "IDATA test execution log", "logs\\' + $RunID", "([string]$record.inspectionMode) ([string]$record.device)", "Start-Sleep -Seconds 2", "$process.WaitForExit(5000)", "if ($Run.stopRequested) {'Interrupted'}", "function Stop-Run", "Persist the stopped state before attempting any process or log cleanup", "IDATA.exe", "cli bundle run", "Handle-Request"} {
 		if !strings.Contains(worker, expected) {
 			t.Fatalf("Server-owned worker does not contain %q", expected)
 		}
@@ -98,6 +98,9 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 	legacySNFlag := "--" + "sn"
 	if strings.Contains(worker, legacySNFlag) || strings.Contains(pythonWorker, legacySNFlag) {
 		t.Fatal("Server workers must forward the device as the final positional argument")
+	}
+	if strings.Contains(worker, "Read-Host") {
+		t.Fatal("completed test consoles must not wait for interactive Enter input")
 	}
 	windowsInput := string(idataWorkerInput("windows", []byte(`{"settings":{}}`)))
 	if !strings.Contains(windowsInput, "param(") || strings.Contains(windowsInput, "import base64") {
