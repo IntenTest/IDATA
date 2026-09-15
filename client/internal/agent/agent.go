@@ -22,7 +22,7 @@ import (
 	"idata-client/internal/terminal"
 )
 
-const Version = "0.7.14"
+const Version = "0.7.15"
 
 var ErrAuthenticationRejected = errors.New("agent authentication rejected")
 

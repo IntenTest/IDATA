@@ -57,3 +57,17 @@ func TestRunSuppliesStandardInput(t *testing.T) {
 		t.Fatalf("stdin was not supplied: %+v", result)
 	}
 }
+
+func TestRunTreatsWaitDelayAfterSuccessfulLauncherAsSuccess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix shell fixture")
+	}
+	started := time.Now()
+	result := Run(context.Background(), "sleep 3 &", nil, 10*time.Second, 1024)
+	if result.ExitCode != 0 || result.Error != "" || result.TimedOut {
+		t.Fatalf("successful detached launcher was reported as failed: %+v", result)
+	}
+	if elapsed := time.Since(started); elapsed < 1900*time.Millisecond || elapsed > 2800*time.Millisecond {
+		t.Fatalf("expected WaitDelay handling after about two seconds, took %v", elapsed)
+	}
+}

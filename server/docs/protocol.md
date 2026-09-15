@@ -52,6 +52,9 @@ once after completion. This keeps Windows PowerShell memory stable for long runs
 
 The Client returns `result` with the matching request ID, exit code, stdout, stderr,
 duration, truncation flags, timeout state, or executor error. Writers use the existing WebSocket lock.
+Client 0.7.15 treats `exec.ErrWaitDelay` as success only when the launcher itself
+exited successfully and the command context was neither timed out nor canceled.
+This allows detached Server workers to continue without reporting a false command failure.
 Disconnected server connections release pending requests. Older clients keep their
 terminal/command support but return a capability error for the new workspace.
 

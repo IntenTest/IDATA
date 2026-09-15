@@ -51,6 +51,14 @@ func Run(parent context.Context, command string, stdin []byte, timeout time.Dura
 	result.StderrTruncated = stderr.Truncated()
 	result.TimedOut = errors.Is(ctx.Err(), context.DeadlineExceeded)
 
+	// A successfully exited launcher may intentionally leave a detached worker
+	// running with an inherited pipe handle. Go reports ErrWaitDelay after it
+	// stops waiting for that pipe, even though the command itself succeeded.
+	// Preserve the successful exit result; timeout and cancellation still win.
+	if errors.Is(err, exec.ErrWaitDelay) && ctx.Err() == nil {
+		result.ExitCode = 0
+		return result
+	}
 	if err == nil {
 		result.ExitCode = 0
 		return result

@@ -29,6 +29,9 @@ is uncertain after a connection failure, inspect test runs before retrying.
 
 The Client returns `result` with the matching request ID, exit code, stdout, stderr,
 duration, truncation flags, timeout state, or executor error. Writers use the existing WebSocket lock.
+If a launcher exits successfully but a detached worker temporarily retains an I/O
+handle, Go's `exec.ErrWaitDelay` is treated as a successful launcher result rather
+than a command failure. Real timeouts, cancellations, and nonzero exits remain errors.
 Disconnected server connections release pending requests. Older clients keep their
 terminal/command support but return a capability error for the new workspace.
 
