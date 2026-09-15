@@ -79,6 +79,7 @@ func (s *Server) registerIDATA(mux *http.ServeMux) {
 }
 
 func (s *Server) handleIDATA(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-IDATA-Version", ReleaseVersion)
 	if !sameOriginOrNative(r) || r.Header.Get("Sec-Fetch-Site") == "cross-site" {
 		writeError(w, 403, "Cross-origin request rejected.")
 		return
@@ -158,9 +159,9 @@ func (s *Server) handleIDATA(w http.ResponseWriter, r *http.Request) {
 			detail = detail[len(detail)-2000:]
 		}
 		if detail == "" {
-			detail = "IDATA did not create a result file."
+			detail = "The Server worker returned no response."
 		}
-		writeError(w, 502, "The server command returned an invalid response: "+detail)
+		writeError(w, 502, "The Server v"+ReleaseVersion+" command returned an invalid response: "+detail)
 		return
 	}
 	if !response.OK {
@@ -198,7 +199,7 @@ func idataWorkerCommand(goos, operation, method string) string {
 	if goos == "windows" {
 		// The Server materializes and invokes its PowerShell worker. IDATA.exe is
 		// reserved for actual test-case bundle execution inside that worker.
-		script := fmt.Sprintf(`$ErrorActionPreference='Stop'; $root=Join-Path $env:LOCALAPPDATA 'IDATA\server-command-runtime'; [IO.Directory]::CreateDirectory($root) | Out-Null; $token=[guid]::NewGuid().ToString('N'); $worker=Join-Path $root ($token+'.ps1'); $request=Join-Path $root ($token+'.json'); $result=Join-Path $root ($token+'.result'); $utf8=New-Object System.Text.UTF8Encoding($false); [Console]::InputEncoding=$utf8; $wire=[Console]::In.ReadToEnd(); $split=$wire.IndexOf([char]10); if($split -lt 0){throw 'Invalid Server input'}; $payload=$wire.Substring(0,$split).TrimEnd([char]13); [IO.File]::WriteAllText($worker,$wire.Substring($split+1),$utf8); if($payload){[IO.File]::WriteAllBytes($request,[Convert]::FromBase64String($payload))}else{[IO.File]::WriteAllText($request,'',$utf8)}; $workerOutput=(& powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $worker -RequestPath $request -ResultPath $result -OperationB64 '%s' -MethodB64 '%s' 2>&1 | Out-String); $code=$LASTEXITCODE; Remove-Item -LiteralPath $request,$worker -Force -ErrorAction SilentlyContinue; if(Test-Path -LiteralPath $result){$response=[Convert]::ToBase64String([IO.File]::ReadAllBytes($result)); Remove-Item -LiteralPath $result -Force -ErrorAction SilentlyContinue; [Console]::Out.WriteLine('__IDATA_SERVER_RESPONSE__'+$response); exit 0}; $detail=$workerOutput.Trim(); if($detail.Length -gt 2000){$detail=$detail.Substring($detail.Length-2000)}; [Console]::Error.WriteLine(('Server PowerShell worker produced no result (exit code '+$code+'). '+$detail)); exit 1`, encodedOperation, encodedMethod)
+		script := fmt.Sprintf(`$ErrorActionPreference='Stop'; $root=Join-Path $env:LOCALAPPDATA 'IDATA\server-command-runtime'; [IO.Directory]::CreateDirectory($root) | Out-Null; $token=[guid]::NewGuid().ToString('N'); $worker=Join-Path $root ($token+'.ps1'); $request=Join-Path $root ($token+'.json'); $utf8=New-Object System.Text.UTF8Encoding($false); [Console]::InputEncoding=$utf8; $wire=[Console]::In.ReadToEnd(); $split=$wire.IndexOf([char]10); if($split -lt 0){throw 'Invalid Server input'}; $payload=$wire.Substring(0,$split).TrimEnd([char]13); [IO.File]::WriteAllText($worker,$wire.Substring($split+1),$utf8); if($payload){[IO.File]::WriteAllBytes($request,[Convert]::FromBase64String($payload))}else{[IO.File]::WriteAllText($request,'',$utf8)}; $workerOutput=(& powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $worker -RequestPath $request -OperationB64 '%s' -MethodB64 '%s' 2>&1 | Out-String); $code=$LASTEXITCODE; Remove-Item -LiteralPath $request,$worker -Force -ErrorAction SilentlyContinue; if($code -eq 0 -and $workerOutput.Contains('__IDATA_SERVER_RESPONSE__')){[Console]::Out.Write($workerOutput); exit 0}; $detail=$workerOutput.Trim(); if($detail.Length -gt 2000){$detail=$detail.Substring($detail.Length-2000)}; [Console]::Error.WriteLine(('Server PowerShell worker returned no response (exit code '+$code+'). '+$detail)); exit 1`, encodedOperation, encodedMethod)
 		label := strings.Map(func(value rune) rune {
 			if value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9' || strings.ContainsRune("/_-", value) {
 				return value

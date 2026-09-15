@@ -1,6 +1,5 @@
 param(
     [string]$RequestPath,
-    [string]$ResultPath,
     [string]$OperationB64,
     [string]$MethodB64,
     [switch]$BackgroundUpdate,
@@ -259,4 +258,5 @@ try {
 } catch {
     $response = [ordered]@{ok=$false; error=$_.Exception.Message}
 }
-[IO.File]::WriteAllText($ResultPath, ($response | ConvertTo-Json -Depth 30 -Compress), $Utf8)
+$responseBytes = $Utf8.GetBytes(($response | ConvertTo-Json -Depth 30 -Compress))
+[Console]::Out.WriteLine('__IDATA_SERVER_RESPONSE__' + [Convert]::ToBase64String($responseBytes))

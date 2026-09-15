@@ -57,13 +57,16 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 		runes[index] = rune(binary.LittleEndian.Uint16(raw[index*2:]))
 	}
 	script := string(runes)
-	for _, expected := range []string{"powershell.exe", ".ps1", "ReadToEnd", "ResultPath", "OperationB64"} {
+	for _, expected := range []string{"powershell.exe", ".ps1", "ReadToEnd", "__IDATA_SERVER_RESPONSE__", "OperationB64"} {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("PowerShell payload does not contain %q", expected)
 		}
 	}
 	if strings.Contains(script, "IDATA.exe") {
 		t.Fatal("management command still routes its response through IDATA.exe")
+	}
+	if strings.Contains(script, ".result") || strings.Contains(script, "ResultPath") {
+		t.Fatal("management response still relies on a result file")
 	}
 	if strings.Contains(script, "IDATA_COMMAND_PYTHON") {
 		t.Fatal("Windows command still depends on a Client-provided Python runtime")

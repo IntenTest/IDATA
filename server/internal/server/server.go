@@ -18,6 +18,8 @@ import (
 	"idata-server/internal/protocol"
 )
 
+const ReleaseVersion = "0.2.23"
+
 const maxRequestBody = 64 << 10
 
 var (
@@ -127,7 +129,8 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	w.Header().Set("X-IDATA-Version", ReleaseVersion)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": ReleaseVersion})
 }
 
 func (s *Server) handleEnrollmentStart(w http.ResponseWriter, r *http.Request) {
