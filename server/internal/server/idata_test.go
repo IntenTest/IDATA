@@ -79,7 +79,7 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 		t.Fatal("Windows launcher still tries to recapture direct console output")
 	}
 	worker := string(idataWindowsWorkerSource)
-	for _, expected := range []string{"__IDATA_SERVER_RESPONSE__", "System32\\' + $Name", "Get-SystemExecutable 'curl.exe'", "Get-SystemExecutable 'tar.exe'", "Get-ExternalExecutable 'hdc.exe'", "$columns.Count -lt 3", "$status.ToLower() -ne 'connected'", "const.product.model", "const.product.name", "const.product.os.dist.version", "const.product.devicetype", "osVersion=", "deviceType=", "Start-BackgroundUpdate", "VisibleRunPayload", "Execute-VisibleRun", "WindowStyle Normal", "IDATA test execution log", "logs\\' + $RunID", "([string]$record.inspectionMode) ([string]$record.device)", "测试已结束，窗口将自动关闭。", "if ($Run.stopRequested) {'Interrupted'}", "function Stop-Run", "Persist the stopped state before attempting any process or log cleanup", "IDATA.exe", "cli bundle run", "Handle-Request"} {
+	for _, expected := range []string{"__IDATA_SERVER_RESPONSE__", "System32\\' + $Name", "Get-SystemExecutable 'curl.exe'", "Get-SystemExecutable 'tar.exe'", "Get-ExternalExecutable 'hdc.exe'", "$columns.Count -lt 3", "$status.ToLower() -ne 'connected'", "const.product.model", "const.product.name", "const.product.os.dist.version", "const.product.devicetype", "osVersion=", "deviceType=", "Start-BackgroundUpdate", "VisibleRunPayload", "Execute-VisibleRun", "WindowStyle Normal", "RedirectStandardOutput", "RedirectStandardError", "worker.stdout.log", "worker.stderr.log", "$process.Dispose()", "IDATA test execution log", "logs\\' + $RunID", "([string]$record.inspectionMode) ([string]$record.device)", "测试已结束，窗口将自动关闭。", "if ($Run.stopRequested) {'Interrupted'}", "function Stop-Run", "Persist the stopped state before attempting any process or log cleanup", "IDATA.exe", "cli bundle run", "Handle-Request"} {
 		if !strings.Contains(worker, expected) {
 			t.Fatalf("Server-owned worker does not contain %q", expected)
 		}
@@ -101,6 +101,9 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 	}
 	if strings.Contains(worker, "Read-Host") || strings.Contains(worker, "$process.WaitForExit") {
 		t.Fatal("completed test cases must neither wait for interactive input nor block on console exit")
+	}
+	if strings.Contains(worker, "Set-ObjectValue $item 'consoleOutput' (Read-LogText $logPath); Write-JsonFile $path $run") {
+		t.Fatal("background scheduler must not repeatedly copy a growing case log into run state")
 	}
 	windowsInput := string(idataWorkerInput("windows", []byte(`{"settings":{}}`)))
 	if !strings.Contains(windowsInput, "param(") || strings.Contains(windowsInput, "import base64") {

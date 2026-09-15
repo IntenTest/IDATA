@@ -45,6 +45,10 @@ When a case finishes, it writes the result and log, then its console closes
 automatically without prompting for Enter. As soon as the completion status is
 available, the background worker launches the next selected case without waiting
 for the previous console process to exit.
+Hidden update and test-scheduler workers redirect stdout and stderr to dedicated
+files instead of inheriting the Client command pipe. While a case is active, the
+scheduler polls only its small completion marker; it reads the bounded web-view log
+once after completion. This keeps Windows PowerShell memory stable for long runs.
 
 The Client returns `result` with the matching request ID, exit code, stdout, stderr,
 duration, truncation flags, timeout state, or executor error. Writers use the existing WebSocket lock.

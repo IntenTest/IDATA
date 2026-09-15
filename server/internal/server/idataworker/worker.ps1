@@ -22,7 +22,7 @@ $UpdatePath = Join-Path $State 'test-case-update.json'
 function Write-JsonFile([string]$Path, $Value) {
     $temporary = $Path + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
     [IO.File]::WriteAllText($temporary, ($Value | ConvertTo-Json -Depth 30), $Utf8)
-    Move-Item -LiteralPath $temporary -Destination $Path -Force
+    Move-Item -LiteralPath $temporary -Destination $Path -Force | Out-Null
 }
 
 function Read-JsonFile([string]$Path, $Fallback) {
@@ -156,7 +156,8 @@ function Start-BackgroundUpdate {
     $escaped = $worker.Replace("'", "''")
     $command = "& '$escaped' -BackgroundUpdate"
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
-    Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) -WindowStyle Hidden | Out-Null
+    $stdout = Join-Path $State 'update-worker.stdout.log'; $stderr = Join-Path $State 'update-worker.stderr.log'
+    Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr | Out-Null
 }
 
 function Get-IDATAPath($Current) {
@@ -196,7 +197,9 @@ function Start-BackgroundRun([string]$RunID) {
     $escapedWorker = $worker.Replace("'", "''"); $escapedRun = $RunID.Replace("'", "''")
     $command = "& '$escapedWorker' -BackgroundRun '$escapedRun'"
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
-    Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) -WindowStyle Hidden | Out-Null
+    $logs = Join-Path $State ('logs\' + $RunID); [IO.Directory]::CreateDirectory($logs) | Out-Null
+    $stdout = Join-Path $logs 'worker.stdout.log'; $stderr = Join-Path $logs 'worker.stderr.log'
+    Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr | Out-Null
 }
 
 function Execute-VisibleRun([string]$Payload) {
@@ -262,6 +265,7 @@ function Execute-Run([string]$RunID) {
         $logPath = Join-Path $logs ($caseID + '.log'); $statusPath = Join-Path $logs ($caseID + '.status.json')
         Set-ObjectValue $item 'logPath' $logPath
         Set-ObjectValue $item 'result' 'Running'; Write-JsonFile $path $run
+        $process = $null
         try {
             $payloadObject = [ordered]@{
                 runID=$RunID; caseID=[string]$item.testCase; executionName=[string]$item.executionName; device=[string]$run.device
@@ -292,8 +296,10 @@ function Execute-Run([string]$RunID) {
                     Write-JsonFile $statusPath ([ordered]@{exitCode=-1; error=$message})
                     break
                 }
-                Set-ObjectValue $item 'consoleOutput' (Read-LogText $logPath); Write-JsonFile $path $run
-                Start-Sleep -Milliseconds 250
+                # The visible worker owns the growing log. Do not repeatedly copy
+                # that log into the run JSON; doing so causes unbounded allocation
+                # pressure in Windows PowerShell during long-running cases.
+                Start-Sleep -Milliseconds 500
             }
             $status = Read-JsonFile $statusPath ([pscustomobject]@{exitCode=-1; error='The test status file could not be read.'})
             $output = Read-LogText $logPath
@@ -310,6 +316,8 @@ function Execute-Run([string]$RunID) {
             if (-not (Test-Path -LiteralPath $logPath)) { [IO.File]::WriteAllText($logPath, $failure + "`r`n", $Utf8) }
             else { [IO.File]::AppendAllText($logPath, "`r`n$failure`r`n", $Utf8) }
             Set-ObjectValue $item 'result' 'Failed'; Set-ObjectValue $item 'exitCode' -1; Set-ObjectValue $item 'error' $failure; Set-ObjectValue $item 'consoleOutput' (Read-LogText $logPath)
+        } finally {
+            if ($process) { try { $process.Dispose() } catch { } }
         }
         Write-JsonFile $path $run
     }
@@ -444,7 +452,10 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
 }
 
 if ($BackgroundUpdate) { Install-TestCases; exit 0 }
-if ($BackgroundRun) { Execute-Run $BackgroundRun; exit 0 }
+if ($BackgroundRun) {
+    try { Execute-Run $BackgroundRun; exit 0 }
+    catch { [Console]::Error.WriteLine(('Server test scheduler failed. ' + ($_ | Out-String).Trim())); exit 1 }
+}
 if ($VisibleRunPayload) { Execute-VisibleRun $VisibleRunPayload; exit 0 }
 
 try {
