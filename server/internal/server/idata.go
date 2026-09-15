@@ -22,6 +22,9 @@ var idataFiles embed.FS
 //go:embed idataworker/worker.py
 var idataWorkerSource []byte
 
+//go:embed idataworker/worker.ps1
+var idataWindowsWorkerSource []byte
+
 type idataWorkerResponse struct {
 	OK    bool            `json:"ok"`
 	Data  json.RawMessage `json:"data"`
@@ -132,7 +135,7 @@ func (s *Server) handleIDATA(w http.ResponseWriter, r *http.Request) {
 	command := idataWorkerCommand(client.info.OS, operation, r.Method)
 	ctx, cancel := context.WithTimeout(r.Context(), timeout+15*time.Second)
 	defer cancel()
-	result, err := client.sendCommandWithInput(ctx, command, idataWorkerInput(body), timeout)
+	result, err := client.sendCommandWithInput(ctx, command, idataWorkerInput(client.info.OS, body), timeout)
 	if err != nil {
 		writeError(w, 502, "PC disconnected or the server command timed out. Check operation status before retrying.")
 		return
@@ -193,9 +196,9 @@ func idataWorkerCommand(goos, operation, method string) string {
 	encodedMethod := base64.StdEncoding.EncodeToString([]byte(method))
 	loader := "import base64,sys;payload,_,source=sys.stdin.buffer.read().partition(b\"\\n\");sys.argv[1:3]=[base64.b64decode(v).decode() for v in sys.argv[1:3]];sys.argv.append(payload.decode());globals()[\"SERVER_WORKER_SOURCE\"]=source;exec(compile(source,\"<idata-server-worker>\",\"exec\"))"
 	if goos == "windows" {
-		// The Server materializes its own worker and tells IDATA.exe to run it. The
-		// Client neither stores business logic nor decides which executable/args to use.
-		script := fmt.Sprintf(`$ErrorActionPreference='Stop'; $root=Join-Path $env:LOCALAPPDATA 'IDATA\server-command-runtime'; [IO.Directory]::CreateDirectory($root) | Out-Null; $token=[guid]::NewGuid().ToString('N'); $worker=Join-Path $root ($token+'.py'); $request=Join-Path $root ($token+'.request'); $result=Join-Path $root ($token+'.json'); $utf8=New-Object System.Text.UTF8Encoding($false); [Console]::InputEncoding=$utf8; $wire=[Console]::In.ReadToEnd(); $split=$wire.IndexOf([char]10); if($split -lt 0){throw 'Invalid Server input'}; $payload=$wire.Substring(0,$split).TrimEnd([char]13); $request64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($request)); $worker64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($worker)); $result64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($result)); $header='SERVER_EMBEDDED_HEADER = ("'+$request64+'", "'+$worker64+'")'; [IO.File]::WriteAllText($worker,$header+[Environment]::NewLine+$wire.Substring($split+1),$utf8); [IO.File]::WriteAllLines($request,[string[]]@($result64,'%s','%s',$payload),$utf8); $idata=Join-Path $env:IDATA_CLIENT_EXECUTABLE_DIRECTORY 'IDATA.exe'; $idataOutput=(& $idata cli bundle run --path $worker 2>&1 | Out-String); $code=$LASTEXITCODE; for($attempt=0;$attempt -lt 300 -and -not (Test-Path -LiteralPath $result);$attempt++){Start-Sleep -Milliseconds 100}; Remove-Item -LiteralPath $request,$worker -Force -ErrorAction SilentlyContinue; if(Test-Path -LiteralPath $result){$response=[Convert]::ToBase64String([IO.File]::ReadAllBytes($result)); Remove-Item -LiteralPath $result -Force -ErrorAction SilentlyContinue; [Console]::Out.WriteLine('__IDATA_SERVER_RESPONSE__'+$response); exit 0}; $detail=$idataOutput.Trim(); if($detail.Length -gt 2000){$detail=$detail.Substring($detail.Length-2000)}; [Console]::Error.WriteLine(('IDATA worker produced no result (exit code '+$code+'). '+$detail)); exit 1`, encodedOperation, encodedMethod)
+		// The Server materializes and invokes its PowerShell worker. IDATA.exe is
+		// reserved for actual test-case bundle execution inside that worker.
+		script := fmt.Sprintf(`$ErrorActionPreference='Stop'; $root=Join-Path $env:LOCALAPPDATA 'IDATA\server-command-runtime'; [IO.Directory]::CreateDirectory($root) | Out-Null; $token=[guid]::NewGuid().ToString('N'); $worker=Join-Path $root ($token+'.ps1'); $request=Join-Path $root ($token+'.json'); $result=Join-Path $root ($token+'.result'); $utf8=New-Object System.Text.UTF8Encoding($false); [Console]::InputEncoding=$utf8; $wire=[Console]::In.ReadToEnd(); $split=$wire.IndexOf([char]10); if($split -lt 0){throw 'Invalid Server input'}; $payload=$wire.Substring(0,$split).TrimEnd([char]13); [IO.File]::WriteAllText($worker,$wire.Substring($split+1),$utf8); if($payload){[IO.File]::WriteAllBytes($request,[Convert]::FromBase64String($payload))}else{[IO.File]::WriteAllText($request,'',$utf8)}; $workerOutput=(& powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $worker -RequestPath $request -ResultPath $result -OperationB64 '%s' -MethodB64 '%s' 2>&1 | Out-String); $code=$LASTEXITCODE; Remove-Item -LiteralPath $request,$worker -Force -ErrorAction SilentlyContinue; if(Test-Path -LiteralPath $result){$response=[Convert]::ToBase64String([IO.File]::ReadAllBytes($result)); Remove-Item -LiteralPath $result -Force -ErrorAction SilentlyContinue; [Console]::Out.WriteLine('__IDATA_SERVER_RESPONSE__'+$response); exit 0}; $detail=$workerOutput.Trim(); if($detail.Length -gt 2000){$detail=$detail.Substring($detail.Length-2000)}; [Console]::Error.WriteLine(('Server PowerShell worker produced no result (exit code '+$code+'). '+$detail)); exit 1`, encodedOperation, encodedMethod)
 		label := strings.Map(func(value rune) rune {
 			if value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9' || strings.ContainsRune("/_-", value) {
 				return value
@@ -207,12 +210,16 @@ func idataWorkerCommand(goos, operation, method string) string {
 	return fmt.Sprintf(`python3 -c '%s' '%s' '%s'`, loader, encodedOperation, encodedMethod)
 }
 
-func idataWorkerInput(body []byte) []byte {
+func idataWorkerInput(goos string, body []byte) []byte {
+	worker := idataWorkerSource
+	if goos == "windows" {
+		worker = idataWindowsWorkerSource
+	}
 	payload := base64.StdEncoding.EncodeToString(body)
-	input := make([]byte, 0, len(payload)+1+len(idataWorkerSource))
+	input := make([]byte, 0, len(payload)+1+len(worker))
 	input = append(input, payload...)
 	input = append(input, '\n')
-	return append(input, idataWorkerSource...)
+	return append(input, worker...)
 }
 
 func decodeIDATAWorkerResponse(stdout string) (idataWorkerResponse, error) {

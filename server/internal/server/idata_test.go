@@ -24,7 +24,7 @@ func TestServerWorkerRunsFromGenericStdin(t *testing.T) {
 		t.Skip("Unix shell integration")
 	}
 	command := exec.Command("/bin/sh", "-c", idataWorkerCommand(runtime.GOOS, "settings", http.MethodGet))
-	command.Stdin = bytes.NewReader(idataWorkerInput(nil))
+	command.Stdin = bytes.NewReader(idataWorkerInput(runtime.GOOS, nil))
 	command.Env = append(os.Environ(), "HOME="+t.TempDir())
 	output, err := command.CombinedOutput()
 	if err != nil {
@@ -57,22 +57,26 @@ func TestWindowsIDATACommandIsEntirelyServerGenerated(t *testing.T) {
 		runes[index] = rune(binary.LittleEndian.Uint16(raw[index*2:]))
 	}
 	script := string(runes)
-	for _, expected := range []string{"IDATA_CLIENT_EXECUTABLE_DIRECTORY", "IDATA.exe", "cli bundle run", "SERVER_EMBEDDED_HEADER", ".request", "ReadToEnd", "Out-String", "Start-Sleep"} {
+	for _, expected := range []string{"powershell.exe", ".ps1", "ReadToEnd", "ResultPath", "OperationB64"} {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("PowerShell payload does not contain %q", expected)
 		}
 	}
-	if strings.Contains(script, "-- '__request'") {
-		t.Fatal("Windows command still relies on IDATA forwarding worker arguments")
+	if strings.Contains(script, "IDATA.exe") {
+		t.Fatal("management command still routes its response through IDATA.exe")
 	}
 	if strings.Contains(script, "IDATA_COMMAND_PYTHON") {
 		t.Fatal("Windows command still depends on a Client-provided Python runtime")
 	}
-	worker := string(idataWorkerSource)
-	for _, expected := range []string{`"curl.exe"`, `"cli", "bundle", "run"`, "source.rename(LIBRARY)"} {
+	worker := string(idataWindowsWorkerSource)
+	for _, expected := range []string{"curl.exe", "tar.exe", "Start-BackgroundUpdate", "IDATA.exe", "cli bundle run", "Handle-Request"} {
 		if !strings.Contains(worker, expected) {
 			t.Fatalf("Server-owned worker does not contain %q", expected)
 		}
+	}
+	windowsInput := string(idataWorkerInput("windows", []byte(`{"settings":{}}`)))
+	if !strings.Contains(windowsInput, "param(") || strings.Contains(windowsInput, "import base64") {
+		t.Fatal("Windows request did not receive the Server-owned PowerShell worker")
 	}
 }
 
@@ -178,7 +182,7 @@ func TestIDATARoundTripAndDisconnect(t *testing.T) {
 		if err := agent.ReadJSON(&request); err != nil {
 			t.Fatal(err)
 		}
-		stdin := idataWorkerInput([]byte(`{"settings":{}}`))
+		stdin := idataWorkerInput("darwin", []byte(`{"settings":{}}`))
 		if request.Type != protocol.TypeCommand || !strings.Contains(request.Command, "python3 -c") || string(request.Stdin) != string(stdin) {
 			t.Fatalf("unexpected request %+v", request)
 		}
