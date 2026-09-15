@@ -3,8 +3,7 @@ param(
     [string]$OperationB64,
     [string]$MethodB64,
     [switch]$BackgroundUpdate,
-    [string]$BackgroundRun,
-    [string]$VisibleRunPayload
+    [string]$BackgroundRun
 )
 
 $ErrorActionPreference = 'Stop'
@@ -197,9 +196,9 @@ function Start-BackgroundRun([string]$RunID) {
     $escapedWorker = $worker.Replace("'", "''"); $escapedRun = $RunID.Replace("'", "''")
     $command = "& '$escapedWorker' -BackgroundRun '$escapedRun'"
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
-    $logs = Join-Path $State ('logs\' + $RunID); [IO.Directory]::CreateDirectory($logs) | Out-Null
-    $stdout = Join-Path $logs 'worker.stdout.log'; $stderr = Join-Path $logs 'worker.stderr.log'
-    Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr | Out-Null
+    # The one visible runner owns the whole selected case sequence. There is no
+    # hidden scheduler and no completion-file polling process left behind.
+    Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) -WindowStyle Normal | Out-Null
 }
 
 function Execute-VisibleRun([string]$Payload) {
@@ -251,7 +250,7 @@ function Execute-VisibleRun([string]$Payload) {
         Write-JsonFile $statusPath ([ordered]@{exitCode=$exitCode; error=$failure})
     }
     [Console]::Out.WriteLine("日志已保存：$logPath")
-    [Console]::Out.WriteLine('测试已结束，窗口将自动关闭。')
+    [Console]::Out.WriteLine('当前用例执行结束。')
 }
 
 function Execute-Run([string]$RunID) {
@@ -264,8 +263,9 @@ function Execute-Run([string]$RunID) {
         $caseID = ([string]$item.testCase) -replace '[^A-Za-z0-9._-]', '_'
         $logPath = Join-Path $logs ($caseID + '.log'); $statusPath = Join-Path $logs ($caseID + '.status.json')
         Set-ObjectValue $item 'logPath' $logPath
-        Set-ObjectValue $item 'result' 'Running'; Write-JsonFile $path $run
-        $process = $null
+        Set-ObjectValue $item 'processId' $PID
+        Set-ObjectValue $item 'result' 'Running'
+        Write-JsonFile $path $run
         try {
             $payloadObject = [ordered]@{
                 runID=$RunID; caseID=[string]$item.testCase; executionName=[string]$item.executionName; device=[string]$run.device
@@ -273,34 +273,7 @@ function Execute-Run([string]$RunID) {
                 command=[string]$item.command; logPath=$logPath; statusPath=$statusPath
             }
             $payload = [Convert]::ToBase64String($Utf8.GetBytes(($payloadObject | ConvertTo-Json -Depth 10 -Compress)))
-            $escapedWorker = $PSCommandPath.Replace("'", "''")
-            $launch = "& '$escapedWorker' -VisibleRunPayload '$payload'"
-            $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($launch))
-            $process = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) -WorkingDirectory ([string]$run.libraryPath) -WindowStyle Normal -PassThru
-            Set-ObjectValue $item 'processId' $process.Id; Write-JsonFile $path $run
-            while (-not (Test-Path -LiteralPath $statusPath -PathType Leaf)) {
-                $latest = Read-JsonFile $path $null
-                if ($latest.stopRequested) {
-                    Set-ObjectValue $run 'stopRequested' $true
-                    try { $taskkill = Get-SystemExecutable 'taskkill.exe'; & $taskkill /PID ([string]$process.Id) /T /F 2>$null | Out-Null } catch { }
-                    $message = 'The test run was closed manually.'
-                    [IO.File]::AppendAllText($logPath, "`r`nExecution interrupted: $message`r`n", $Utf8)
-                    Write-JsonFile $statusPath ([ordered]@{exitCode=$null; interrupted=$true; error=$message})
-                    break
-                }
-                $process.Refresh()
-                if ($process.HasExited) {
-                    $message = 'The visible test window closed before it wrote a completion status.'
-                    if (-not (Test-Path -LiteralPath $logPath)) { [IO.File]::WriteAllText($logPath, $message + "`r`n", $Utf8) }
-                    else { [IO.File]::AppendAllText($logPath, "`r`n$message`r`n", $Utf8) }
-                    Write-JsonFile $statusPath ([ordered]@{exitCode=-1; error=$message})
-                    break
-                }
-                # The visible worker owns the growing log. Do not repeatedly copy
-                # that log into the run JSON; doing so causes unbounded allocation
-                # pressure in Windows PowerShell during long-running cases.
-                Start-Sleep -Milliseconds 500
-            }
+            Execute-VisibleRun $payload
             $status = Read-JsonFile $statusPath ([pscustomobject]@{exitCode=-1; error='The test status file could not be read.'})
             $output = Read-LogText $logPath
             $code = $status.exitCode
@@ -316,11 +289,10 @@ function Execute-Run([string]$RunID) {
             if (-not (Test-Path -LiteralPath $logPath)) { [IO.File]::WriteAllText($logPath, $failure + "`r`n", $Utf8) }
             else { [IO.File]::AppendAllText($logPath, "`r`n$failure`r`n", $Utf8) }
             Set-ObjectValue $item 'result' 'Failed'; Set-ObjectValue $item 'exitCode' -1; Set-ObjectValue $item 'error' $failure; Set-ObjectValue $item 'consoleOutput' (Read-LogText $logPath)
-        } finally {
-            if ($process) { try { $process.Dispose() } catch { } }
         }
         Write-JsonFile $path $run
     }
+    [Console]::Out.WriteLine('全部选中用例已执行完成，窗口将自动关闭。')
 }
 
 function Stop-Run([string]$RunID) {
@@ -456,7 +428,6 @@ if ($BackgroundRun) {
     try { Execute-Run $BackgroundRun; exit 0 }
     catch { [Console]::Error.WriteLine(('Server test scheduler failed. ' + ($_ | Out-String).Trim())); exit 1 }
 }
-if ($VisibleRunPayload) { Execute-VisibleRun $VisibleRunPayload; exit 0 }
 
 try {
     $operation = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($OperationB64))
