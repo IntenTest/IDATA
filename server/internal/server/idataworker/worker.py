@@ -191,7 +191,7 @@ def serialize_run(run):
     finished = [item for item in processes if item["result"] not in {"Pending", "Running"}]
     failed = sum(item["result"] == "Failed" for item in finished)
     interrupted = sum(item["result"] == "Interrupted" for item in finished)
-    return {**run, "status": "Running" if len(finished) < len(processes) else "Interrupted" if interrupted else "Failed" if failed else "Completed", "runningProcesses": len(processes) - len(finished), "totalProcesses": len(processes), "executedProcesses": len(finished), "passedProcesses": sum(item["result"] == "Passed" for item in finished), "failedProcesses": failed, "interruptedProcesses": interrupted, "progress": round(len(finished) / len(processes) * 100) if processes else 0, "consoleOutput": "\n\n".join(item.get("consoleOutput", "") for item in processes)}
+    return {**run, "status": "Interrupted" if run.get("stopRequested") else "Running" if len(finished) < len(processes) else "Interrupted" if interrupted else "Failed" if failed else "Completed", "runningProcesses": len(processes) - len(finished), "totalProcesses": len(processes), "executedProcesses": len(finished), "passedProcesses": sum(item["result"] == "Passed" for item in finished), "failedProcesses": failed, "interruptedProcesses": interrupted, "progress": round(len(finished) / len(processes) * 100) if processes else 0, "consoleOutput": "\n\n".join(item.get("consoleOutput", "") for item in processes)}
 
 
 def run_path(run_id):
@@ -206,6 +206,7 @@ def execute_run(run_id):
     for item in run["started"]:
         latest = json.loads(path.read_text(encoding="utf-8"))
         if latest.get("stopRequested"):
+            run["stopRequested"] = True
             item.update(result="Interrupted", exitCode=None, interruptionMessage="The test run was closed manually.")
             atomic_json(path, run)
             continue
@@ -214,7 +215,12 @@ def execute_run(run_id):
         command = item.pop("executionCommand")
         result = subprocess.run(command, cwd=run["libraryPath"], capture_output=True, text=True, errors="replace")
         output = (result.stdout or "") + (result.stderr or "")
-        item.update(result="Passed" if result.returncode == 0 else "Failed", exitCode=result.returncode, consoleOutput=output)
+        latest = json.loads(path.read_text(encoding="utf-8"))
+        if latest.get("stopRequested"):
+            run["stopRequested"] = True
+            item.update(result="Interrupted", exitCode=None, interruptionMessage="The test run was closed manually.", consoleOutput=output)
+        else:
+            item.update(result="Passed" if result.returncode == 0 else "Failed", exitCode=result.returncode, consoleOutput=output)
         match = re.search(r"(?:report|report path|报告路径)\s*[:：]\s*(.+?\.html?)", output, re.I)
         if match:
             item["reportLocation"] = match.group(1).strip().strip('"')
@@ -284,7 +290,11 @@ def handle(operation, method, body):
         return {"testRuns": sorted(runs, key=lambda item: item["startedAt"], reverse=True)}
     match = re.fullmatch(r"test-runs/(TR-[0-9]+)/close", operation)
     if match:
-        path = run_path(match.group(1)); run = json.loads(path.read_text(encoding="utf-8")); run["stopRequested"] = True; atomic_json(path, run); return serialize_run(run)
+        path = run_path(match.group(1)); run = json.loads(path.read_text(encoding="utf-8")); run["stopRequested"] = True
+        for item in run["started"]:
+            if item["result"] in {"Pending", "Running"}:
+                item.update(result="Interrupted", exitCode=None, error="The test run was closed manually.", interruptionMessage="The test run was closed manually.")
+        atomic_json(path, run); return serialize_run(run)
     match = re.fullmatch(r"test-runs/(TR-[0-9]+)/reports/([^/]+)/content", operation)
     if match:
         run = json.loads(run_path(match.group(1)).read_text(encoding="utf-8")); item = next((value for value in run["started"] if value["testCase"] == match.group(2)), None)

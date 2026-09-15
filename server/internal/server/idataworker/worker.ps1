@@ -178,7 +178,7 @@ function Serialize-Run($Run) {
     $started = @($Run.started); $finished = @($started | Where-Object { $_.result -notin @('Pending','Running') })
     $failed = @($finished | Where-Object result -eq 'Failed').Count
     $interrupted = @($finished | Where-Object result -eq 'Interrupted').Count
-    $status = if ($finished.Count -lt $started.Count) {'Running'} elseif ($interrupted) {'Interrupted'} elseif ($failed) {'Failed'} else {'Completed'}
+    $status = if ($Run.stopRequested) {'Interrupted'} elseif ($finished.Count -lt $started.Count) {'Running'} elseif ($interrupted) {'Interrupted'} elseif ($failed) {'Failed'} else {'Completed'}
     $passed = @($finished | Where-Object result -eq 'Passed').Count
     $progress = if ($started.Count) {[math]::Round($finished.Count/$started.Count*100)} else {0}
     return [ordered]@{
@@ -257,7 +257,7 @@ function Execute-Run([string]$RunID) {
     $logs = Join-Path $State ('logs\' + $RunID); [IO.Directory]::CreateDirectory($logs) | Out-Null
     foreach ($item in @($run.started)) {
         $latest = Read-JsonFile $path $null
-        if ($latest.stopRequested) { Set-ObjectValue $item 'result' 'Interrupted'; Set-ObjectValue $item 'interruptionMessage' 'The test run was closed manually.'; Write-JsonFile $path $run; continue }
+        if ($latest.stopRequested) { Set-ObjectValue $run 'stopRequested' $true; Set-ObjectValue $item 'result' 'Interrupted'; Set-ObjectValue $item 'interruptionMessage' 'The test run was closed manually.'; Write-JsonFile $path $run; continue }
         $caseID = ([string]$item.testCase) -replace '[^A-Za-z0-9._-]', '_'
         $logPath = Join-Path $logs ($caseID + '.log'); $statusPath = Join-Path $logs ($caseID + '.status.json')
         Set-ObjectValue $item 'logPath' $logPath
@@ -277,7 +277,8 @@ function Execute-Run([string]$RunID) {
             while (-not (Test-Path -LiteralPath $statusPath -PathType Leaf)) {
                 $latest = Read-JsonFile $path $null
                 if ($latest.stopRequested) {
-                    $taskkill = Get-SystemExecutable 'taskkill.exe'; & $taskkill /PID ([string]$process.Id) /T /F 2>$null | Out-Null
+                    Set-ObjectValue $run 'stopRequested' $true
+                    try { $taskkill = Get-SystemExecutable 'taskkill.exe'; & $taskkill /PID ([string]$process.Id) /T /F 2>$null | Out-Null } catch { }
                     $message = 'The test run was closed manually.'
                     [IO.File]::AppendAllText($logPath, "`r`nExecution interrupted: $message`r`n", $Utf8)
                     Write-JsonFile $statusPath ([ordered]@{exitCode=$null; interrupted=$true; error=$message})
@@ -298,7 +299,8 @@ function Execute-Run([string]$RunID) {
             $output = Read-LogText $logPath
             $code = $status.exitCode
             $result = if ($code -eq 0) {'Passed'} else {'Failed'}
-            if ($status.interrupted) { $result = 'Interrupted' }
+            $latest = Read-JsonFile $path $null
+            if ($status.interrupted -or $latest.stopRequested) { Set-ObjectValue $run 'stopRequested' $true; $result = 'Interrupted' }
             Set-ObjectValue $item 'result' $result
             Set-ObjectValue $item 'exitCode' $code; Set-ObjectValue $item 'consoleOutput' $output
             if ($status.error) { Set-ObjectValue $item 'error' ([string]$status.error) }
@@ -311,6 +313,45 @@ function Execute-Run([string]$RunID) {
         }
         Write-JsonFile $path $run
     }
+}
+
+function Stop-Run([string]$RunID) {
+    $path = Get-RunPath $RunID
+    $run = Read-JsonFile $path $null
+    if (-not $run) { throw 'Test run was not found.' }
+    Set-ObjectValue $run 'stopRequested' $true
+    $message = 'The test run was closed manually.'
+    $logs = Join-Path $State ('logs\' + $RunID); [IO.Directory]::CreateDirectory($logs) | Out-Null
+    $active = @($run.started | Where-Object { [string]$_.result -in @('Pending','Running') })
+    foreach ($item in $active) {
+        $caseID = ([string]$item.testCase) -replace '[^A-Za-z0-9._-]', '_'
+        $logPath = if ($item.logPath) {[string]$item.logPath} else {Join-Path $logs ($caseID + '.log')}
+        Set-ObjectValue $item 'logPath' $logPath
+        Set-ObjectValue $item 'result' 'Interrupted'
+        Set-ObjectValue $item 'exitCode' $null
+        Set-ObjectValue $item 'error' $message
+        Set-ObjectValue $item 'interruptionMessage' $message
+    }
+    # Persist the stopped state before attempting any process or log cleanup.
+    Write-JsonFile $path $run
+    foreach ($item in $active) {
+        if ($item.processId) {
+            try {
+                $taskkill = Get-SystemExecutable 'taskkill.exe'
+                & $taskkill /PID ([string]$item.processId) /T /F 2>$null | Out-Null
+            } catch {
+                # Process cleanup is best effort. The persisted run state above is authoritative.
+            }
+        }
+        try {
+            $logPath = [string]$item.logPath
+            $logParent = Split-Path -Parent $logPath; [IO.Directory]::CreateDirectory($logParent) | Out-Null
+            [IO.File]::AppendAllText($logPath, "`r`nExecution interrupted: $message`r`n", $Utf8)
+            Set-ObjectValue $item 'consoleOutput' (Read-LogText $logPath)
+        } catch { }
+    }
+    Write-JsonFile $path $run
+    return (Serialize-Run $run)
 }
 
 function Handle-Request([string]$Operation, [string]$Method, $Body) {
@@ -386,7 +427,7 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
         Write-JsonFile (Get-RunPath $runID) $run; Start-BackgroundRun $runID
         return (Serialize-Run $run)
     }
-    if ($Operation -match '^test-runs/(TR-[0-9]+)/close$') { $path=Get-RunPath $matches[1]; $run=Read-JsonFile $path $null; Set-ObjectValue $run 'stopRequested' $true; Write-JsonFile $path $run; return (Serialize-Run $run) }
+    if ($Operation -match '^test-runs/(TR-[0-9]+)/close$') { return (Stop-Run $matches[1]) }
     if ($Operation -match '^test-runs/(TR-[0-9]+)/reports/([^/]+)/content$') {
         $run=Read-JsonFile (Get-RunPath $matches[1]) $null; $caseID=$matches[2]; $item=@($run.started | Where-Object {[string]$_.testCase -eq $caseID})[0]
         if (-not $item -or -not (Test-Path -LiteralPath ([string]$item.reportLocation) -PathType Leaf)) { throw 'Test report was not found.' }

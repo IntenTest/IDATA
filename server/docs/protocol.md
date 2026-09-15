@@ -29,6 +29,12 @@ Long-running tests return after launch and are polled separately. Disconnecting 
 browser does not cancel a test; the explicit close operation does. If launch status
 is uncertain after a connection failure, inspect test runs before retrying.
 
+A close request first persists `stopRequested` and changes every Pending/Running
+case to Interrupted. That state is authoritative and is returned immediately;
+terminating the local Windows process tree and appending logs are best-effort
+cleanup. Later process completion cannot overwrite a stopped run with a success,
+failure, or Running state.
+
 On Windows, every test case runs in a visible Windows PowerShell console generated
 by the Server worker. Combined stdout/stderr and launch diagnostics are persisted as
 UTF-8 under `%USERPROFILE%\.idata\server-command-runtime\logs\<run-id>` and mirrored
