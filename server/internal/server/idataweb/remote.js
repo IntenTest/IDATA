@@ -20,7 +20,7 @@
   "Connect IDATA Client": "连接 IDATA 客户端",
   "Open IDATA Client": "启动 IDATA 客户端",
   "Client started — refresh connection": "已启动客户端，刷新连接",
-  "Install IDATA Client": "安装IDATA Client客户端",
+  "Download IDATA Client": "下载IDATA Client客户端",
   "Open IDATA Client on this computer to access devices and run tests. This page will refresh automatically when the client connects.": "请启动本机的 IDATA 客户端，以访问设备并运行测试。检测到接入后，页面将自动刷新。",
   "Looking for the IDATA Client…": "正在检测 IDATA 客户端接入状态…",
   "IDATA Client is not connected. Open it to continue.": "尚未检测到 IDATA 客户端接入，请点击下方按钮启动客户端。",
@@ -56,7 +56,7 @@
       <el-dialog
         v-model="connection.visible"
         :title="t('Connect IDATA Client')"
-        width="560px"
+        width="680px"
         :show-close="false"
         :close-on-click-modal="false"
         :close-on-press-escape="false"
@@ -93,9 +93,11 @@
           </el-tag>
         </div>
         <template #footer>
-          <el-button @click="refreshConnection">{{ t('Client started — refresh connection') }}</el-button>
-          <el-button @click="openIDATAClientDownload">{{ t('Install IDATA Client') }}</el-button>
-          <el-button type="primary" @click="openWindowsClient">{{ t('Open IDATA Client') }}</el-button>
+          <div class="remote-connection-actions">
+            <el-button @click="refreshConnection">{{ t('Client started — refresh connection') }}</el-button>
+            <el-button @click="openIDATAClientDownload">{{ t('Download IDATA Client') }}</el-button>
+            <el-button type="primary" @click="openWindowsClient">{{ t('Open IDATA Client') }}</el-button>
+          </div>
         </template>
       </el-dialog>
     `,
