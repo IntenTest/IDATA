@@ -190,6 +190,17 @@ function Get-RunPath([string]$RunID) {
 }
 
 function Serialize-Run($Run) {
+    # Refresh only the response snapshot; the runner remains the sole state writer.
+    foreach ($item in @($Run.started)) {
+        if ($item.result -eq 'Running' -and $item.logPath) {
+            try {
+                $output = Read-LogText ([string]$item.logPath)
+                if ($output.Length -gt 0) { Set-ObjectValue $item 'consoleOutput' $output }
+            } catch {
+                # A temporarily unavailable log must not prevent status polling.
+            }
+        }
+    }
     $started = @($Run.started); $finished = @($started | Where-Object { $_.result -notin @('Pending','Running') })
     $failed = @($finished | Where-Object result -eq 'Failed').Count
     $interrupted = @($finished | Where-Object result -eq 'Interrupted').Count
