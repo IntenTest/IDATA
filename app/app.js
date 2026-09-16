@@ -112,14 +112,11 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Create suite": "创建套件",
   "No test suites match this search": "没有符合搜索条件的测试套件",
   Run: "运行",
-  "Test run is active": "测试任务进行中",
   "Open test cases": "打开测试用例",
   "Configure another run": "配置另一次运行",
-  "View run details": "查看运行详情",
-  "Start another run": "发起新的测试任务",
   "Quality assurance workflow": "测试工作流",
   "Manage test runs.": "管理测试任务",
-  "Start a focused test run.": "发起新的UI自测试任务",
+  "Start a focused test run.": "发起新的测试任务",
   "Name the run, choose a target device, and select the test cases for the tester.": "填写名称，选择设备和测试用例。",
   "Test run name": "测试任务名称",
   "Example: Release 2.4 regression": "示例：2.4 版本回归测试",
@@ -765,11 +762,9 @@ const App = {
     const suiteSearchQuery = ref("");
     const suiteCurrentPage = ref(1);
     const suitePageSize = ref(20);
-    const testRunStarted = ref(false);
     const testRunStarting = ref(false);
     const testRunClosing = ref(false);
     const testRunError = ref("");
-    const testRunExecution = ref(null);
     const testCasesLoading = ref(false);
     const testCasesError = ref("");
     const mappingValidationVisible = ref(false);
@@ -1374,7 +1369,6 @@ const App = {
         notes: "",
       });
       clearSelectedTestCases();
-      testRunStarted.value = false;
       selectView("New Test Run");
     }
 
@@ -1877,8 +1871,19 @@ const App = {
         selections: [...suite.caseIds],
         notes: "",
       });
-      testRunStarted.value = false;
       selectView("New Test Run");
+    }
+
+    function resetNewTestRun() {
+      Object.assign(newTestRun, {
+        name: "",
+        device: "",
+        selectionType: "Test cases",
+        selections: [],
+        inspectionMode: 0,
+        notes: "",
+      });
+      testRunError.value = "";
     }
 
     async function startTestRun() {
@@ -1929,13 +1934,14 @@ const App = {
               `The test run service returned HTTP ${response.status}.`,
           );
         }
-        testRunExecution.value = result;
+        const startedRunName = newTestRun.name;
         upsertActiveTestRun(result);
-        testRunStarted.value = true;
+        resetNewTestRun();
+        selectView("Test Run Details", { runId: result.id });
         ElementPlus.ElMessage({
           message: isChinese.value
-            ? `${newTestRun.name}已启动 ${result.started.length} 个测试用例。`
-            : `${newTestRun.name} started ${result.started.length} test cases.`,
+            ? `${startedRunName}已启动 ${result.started.length} 个测试用例。`
+            : `${startedRunName} started ${result.started.length} test cases.`,
           type: "success",
         });
       } catch (error) {
@@ -2107,11 +2113,9 @@ const App = {
       selectedTestLabels,
       testSelectionOptions,
       testRunReady,
-      testRunStarted,
       testRunStarting,
       testRunClosing,
       testRunError,
-      testRunExecution,
       testCasesLoading,
       testCasesError,
       settingsError,
@@ -3116,32 +3120,7 @@ const App = {
         </template>
 
         <template v-else-if="activeView === 'New Test Run'">
-          <section v-if="testRunStarted" class="run-success">
-            <span class="run-success-mark">✓</span>
-            <p class="eyebrow">{{ t('Test run is active') }}</p>
-            <h2>{{ newTestRun.name }}</h2>
-            <p>
-              {{ testRunExecution?.started?.length || selectedRunCaseCount }}
-              test cases started in
-              {{ t(['Execution log inspection', 'Log and screenshot inspection', 'Log and recording inspection'][newTestRun.inspectionMode]) }}
-              mode on
-              {{ selectedDevice?.name || selectedDevice?.model || newTestRun.device }}.
-            </p>
-            <div class="run-success-actions">
-              <el-button
-                type="primary"
-                size="large"
-                @click="selectView('Test Run Details', { runId: testRunExecution.id })"
-              >
-                {{ t('View run details') }}
-              </el-button>
-              <el-button size="large" @click="testRunStarted = false">
-                {{ t('Start another run') }}
-              </el-button>
-            </div>
-          </section>
-
-          <section v-else class="run-layout">
+          <section class="run-layout">
             <article class="run-form-panel">
               <div class="run-page-intro">
                 <p class="eyebrow">{{ t('Quality assurance workflow') }}</p>
