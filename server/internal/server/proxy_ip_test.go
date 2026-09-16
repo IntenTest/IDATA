@@ -4,6 +4,7 @@ import (
 	"idata-server/internal/protocol"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -18,7 +19,7 @@ func TestProxySourceAddressNormalization(t *testing.T) {
 	}{
 		{"127.0.0.1:50000", "192.0.2.10", "192.0.2.10:50000", 204},
 		{"[2001:db8:1::2]:50000", "2001:db8:2::3", "[2001:db8:2::3]:50000", 204},
-		{"192.0.2.20:50000", "192.0.2.10", "192.0.2.20:50000", 204},
+		{"192.0.2.20:50000", "192.0.2.10", "", 400},
 		{"127.0.0.1:50000", "", "", 400},
 		{"127.0.0.1:50000", "192.0.2.10,192.0.2.20", "", 400},
 	} {
@@ -41,6 +42,16 @@ func TestProxySourceAddressNormalization(t *testing.T) {
 		if _, err := newProxyTrust(bad); err == nil {
 			t.Fatalf("accepted proxy configuration %q", bad)
 		}
+	}
+	untrusted := httptest.NewRequest("GET", "/api/v1/self", nil)
+	untrusted.RemoteAddr = "192.0.2.20:50000"
+	untrusted.Header.Set("X-Real-IP", "198.51.100.30")
+	untrustedResponse := httptest.NewRecorder()
+	trust.handler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("untrusted proxy request reached the application")
+	})).ServeHTTP(untrustedResponse, untrusted)
+	if untrustedResponse.Code != http.StatusBadRequest || !strings.Contains(untrustedResponse.Body.String(), `"error_code":"untrusted_proxy"`) || !strings.Contains(untrustedResponse.Body.String(), `"browser_ip":"198.51.100.30"`) || !strings.Contains(untrustedResponse.Body.String(), `"proxy_ip":"192.0.2.20"`) {
+		t.Fatalf("unexpected untrusted proxy response: %d %s", untrustedResponse.Code, untrustedResponse.Body.String())
 	}
 }
 

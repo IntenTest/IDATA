@@ -54,6 +54,34 @@ input {
   line-height: 1.7;
 }
 
+.remote-ip-summary {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid #e7e9f3;
+  border-radius: 10px;
+  background: #f8f9fd;
+}
+
+.remote-ip-summary > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.remote-ip-summary span {
+  color: #737994;
+  font-size: 12px;
+}
+
+.remote-ip-summary strong {
+  color: #252944;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
@@ -2958,6 +2986,61 @@ h3 {
   border-radius: 8px;
 }
 
+.connection-ip-panel {
+  display: grid;
+  gap: 18px;
+  padding: 22px 26px;
+  border: 1px solid #dfe6fb;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #f8faff 0%, #f2f5ff 100%);
+}
+
+.connection-ip-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.connection-ip-heading p {
+  margin: 5px 0 0;
+  color: #69708e;
+  line-height: 1.55;
+}
+
+.connection-ip-heading .eyebrow {
+  margin: 0;
+  color: #4b5ca7;
+}
+
+.connection-ip-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.connection-ip-values > div {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px 16px;
+  border: 1px solid #e2e7f7;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.connection-ip-values span {
+  color: #7b829d;
+  font-size: 12px;
+}
+
+.connection-ip-values strong {
+  overflow-wrap: anywhere;
+  color: #252944;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 15px;
+}
+
 .settings-form {
   padding: 28px;
   border: 1px solid #e8e9f1;
@@ -3143,6 +3226,11 @@ h3 {
   }
 
   .settings-intro {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .connection-ip-heading {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -3413,6 +3501,10 @@ h3 {
   .settings-file {
     width: 100%;
     min-width: 0;
+  }
+
+  .connection-ip-values {
+    grid-template-columns: 1fr;
   }
 
   .settings-form {

@@ -212,6 +212,14 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Reset defaults": "恢复默认值",
   "Settings restored to defaults.": "设置已恢复为默认值。",
   "Settings saved.": "设置已保存。",
+  "Connection IP scope": "连接 IP 范围",
+  "Only the Client connected from the same effective IP can provide devices, tests, reports, and terminal access.": "只有通过相同有效 IP 接入的 Client 才能提供设备、测试任务、报告和终端访问。",
+  "Current web access IP": "当前网页接入 IP",
+  "Matched Client connection IP": "匹配的 Client 接入 IP",
+  "Not connected": "尚未连接",
+  "IP matching is confirmed.": "网页 IP 与 Client IP 匹配成功。",
+  "Waiting for a Client from this IP.": "正在等待同一 IP 的 Client 接入。",
+  "IP mismatch; access is blocked.": "IP 不一致，已阻止访问。",
   "Continue": "继续",
   "Inspection mode": "检查模式",
   "Execution log inspection": "执行日志检测",
@@ -730,6 +738,7 @@ const App = {
       Settings: "?view=settings",
     };
     const activeView = ref(requestedViews[requestedView] || "Overview");
+    const connectionInfo = window.IDATAConnectionInfo || reactive({ browserIP: "", clientIP: "" });
     const appSettings = reactive({ ...DEFAULT_APP_SETTINGS });
     const settingsLoading = ref(false);
     const settingsSaving = ref(false);
@@ -2158,6 +2167,7 @@ const App = {
       settingsLoading,
       settingsSaving,
       settingsSavedAt,
+      connectionInfo,
       today,
       changeTestCaseSort,
       deviceOptions: devices,
@@ -3374,6 +3384,35 @@ const App = {
               <div class="settings-file">
                 <span>{{ t('Config file') }}</span>
                 <strong>app/config/settings.json</strong>
+              </div>
+            </div>
+
+            <div class="connection-ip-panel">
+              <div class="connection-ip-heading">
+                <div>
+                  <p class="eyebrow">{{ t('Connection IP scope') }}</p>
+                  <p>{{ t('Only the Client connected from the same effective IP can provide devices, tests, reports, and terminal access.') }}</p>
+                </div>
+                <el-tag
+                  :type="connectionInfo.clientIP && connectionInfo.clientIP === connectionInfo.browserIP ? 'success' : connectionInfo.clientIP ? 'danger' : 'info'"
+                  effect="light"
+                >
+                  {{ t(connectionInfo.clientIP && connectionInfo.clientIP === connectionInfo.browserIP
+                    ? 'IP matching is confirmed.'
+                    : connectionInfo.clientIP
+                      ? 'IP mismatch; access is blocked.'
+                      : 'Waiting for a Client from this IP.') }}
+                </el-tag>
+              </div>
+              <div class="connection-ip-values">
+                <div>
+                  <span>{{ t('Current web access IP') }}</span>
+                  <strong>{{ connectionInfo.browserIP || '—' }}</strong>
+                </div>
+                <div>
+                  <span>{{ t('Matched Client connection IP') }}</span>
+                  <strong>{{ connectionInfo.clientIP || t('Not connected') }}</strong>
+                </div>
               </div>
             </div>
 

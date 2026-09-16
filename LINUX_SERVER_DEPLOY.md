@@ -1,4 +1,4 @@
-# IDATA Linux 服务器重新部署（v0.2.40）
+# IDATA Linux 服务器重新部署（v0.2.41）
 
 本文用于在 Ubuntu x86-64 服务器上首次安装或升级 IDATA Server。
 重新部署会保留现有的监听地址、Token 和已批准的设备凭据。
@@ -7,24 +7,24 @@
 
 推荐只下载以下两个文件：
 
-1. [`IDATA-ubuntu-v0.2.40.tar.gz`](https://github.com/IntenTest/IDATA/releases/download/v0.2.40/IDATA-ubuntu-v0.2.40.tar.gz)
+1. [`IDATA-ubuntu-v0.2.41.tar.gz`](https://github.com/IntenTest/IDATA/releases/download/v0.2.41/IDATA-ubuntu-v0.2.41.tar.gz)
    —— Ubuntu 完整部署包，内含 Linux Server、部署脚本、本文档和包内校验文件。
-2. [`SHA256SUMS`](https://github.com/IntenTest/IDATA/releases/download/v0.2.40/SHA256SUMS)
+2. [`SHA256SUMS`](https://github.com/IntenTest/IDATA/releases/download/v0.2.41/SHA256SUMS)
    ——用于校验下载的 `.tar.gz` 是否完整。
 
 Linux 服务器不需要下载 `IDATA-Client.exe`；该文件只用于
 Windows 执行电脑。Windows 用户应从同一 Release 下载
-[`IDATA-Client.exe`](https://github.com/IntenTest/IDATA/releases/download/v0.2.40/IDATA-Client.exe)。
+[`IDATA-Client.exe`](https://github.com/IntenTest/IDATA/releases/download/v0.2.41/IDATA-Client.exe)。
 
 如果 Ubuntu 服务器可以访问 GitHub，直接执行：
 
 ```bash
-mkdir -p "$HOME/idata-release-v0.2.40"
-cd "$HOME/idata-release-v0.2.40"
+mkdir -p "$HOME/idata-release-v0.2.41"
+cd "$HOME/idata-release-v0.2.41"
 curl --fail --location --remote-name \
-  https://github.com/IntenTest/IDATA/releases/download/v0.2.40/IDATA-ubuntu-v0.2.40.tar.gz
+  https://github.com/IntenTest/IDATA/releases/download/v0.2.41/IDATA-ubuntu-v0.2.41.tar.gz
 curl --fail --location --remote-name \
-  https://github.com/IntenTest/IDATA/releases/download/v0.2.40/SHA256SUMS
+  https://github.com/IntenTest/IDATA/releases/download/v0.2.41/SHA256SUMS
 ```
 
 如果服务器不能访问 GitHub，先在可联网电脑上下载上述两个文件，再通过
@@ -35,9 +35,9 @@ SCP、SFTP 或内网文件传输工具将它们放到 Ubuntu 服务器的同一�
 进入两个下载文件所在的目录，执行：
 
 ```bash
-grep ' IDATA-ubuntu-v0.2.40.tar.gz$' SHA256SUMS | sha256sum --check -
-tar -xzf IDATA-ubuntu-v0.2.40.tar.gz
-cd IDATA-ubuntu-v0.2.40
+grep ' IDATA-ubuntu-v0.2.41.tar.gz$' SHA256SUMS | sha256sum --check -
+tar -xzf IDATA-ubuntu-v0.2.41.tar.gz
+cd IDATA-ubuntu-v0.2.41
 sha256sum --check SHA256SUMS
 ```
 
@@ -80,7 +80,7 @@ curl --fail --silent --show-error http://127.0.0.1:12345/healthz
 默认端口的健康检查应返回：
 
 ```json
-{"status":"ok","version":"0.2.40"}
+{"status":"ok","version":"0.2.41"}
 ```
 
 如果原服务使用的不是 `12345` 端口，请将命令中的端口替换为
@@ -215,17 +215,18 @@ Configure the backend with Nginx's own peer address (not the user PC addresses):
 
     IDATA_TRUSTED_PROXIES=127.0.0.1,::1
 
-The example above applies when Nginx connects over loopback. If Nginx runs on the
-same host but proxy_pass uses 10.90.65.189:12345, include 10.90.65.189. For that
-layout the offline upgrade command is:
+The installer now records loopback plus the server's current local IP addresses
+when this setting is missing, so same-machine Nginx deployments are covered after
+upgrade. For a fixed same-host layout using 10.90.65.189, the override remains:
 
     sudo env IDATA_DEPLOY_TRUSTED_PROXIES=127.0.0.1,::1,10.90.65.189 bash deploy-ubuntu.sh
 
 If Nginx is on another host, substitute the Nginx source address seen by the
-backend. The installer preserves this setting on later upgrades unless the
+backend. The installer preserves an existing setting on later upgrades unless the
 IDATA_DEPLOY_TRUSTED_PROXIES override is supplied. Direct access without a reverse
-proxy needs no setting. Address lists and CIDRs are supported; no proxy IP is
-hard-coded into the application.
+proxy needs no setting. Address lists and CIDRs are supported. If an untrusted
+proxy sends X-Real-IP, the Server rejects the request instead of silently matching
+every user to the proxy address.
 
 One source-IP adapter applies before all HTTP and WebSocket handlers. Device
 lists, test operations, report reads, and terminal authorization use the same
@@ -233,8 +234,7 @@ effective PC IP. A browser can only reach the Client whose effective IP matches
 its own. It cannot select another PC by changing a URL parameter. An offline
 Client does not cause fallback to another PC. Multiple Clients on one effective
 IP produce a conflict instead of an arbitrary selection. A duplicate Client ID
-from another IP cannot replace an existing active Client; configure distinct
-Client IDs if two PCs have identical hostnames.
+from another IP remains independently addressable within that IP scope.
 
 Verification includes two simulated PCs sharing a reverse proxy: each sees only
 its own Client and sends device queries, test requests, and report reads only to

@@ -139,8 +139,9 @@ effective PC IP. A browser can only reach the Client whose effective IP matches
 its own. It cannot select another PC by changing a URL parameter. An offline
 Client does not cause fallback to another PC. Multiple Clients on one effective
 IP produce a conflict instead of an arbitrary selection. A duplicate Client ID
-from another IP cannot replace an existing active Client; configure distinct
-Client IDs if two PCs have identical hostnames.
+from another IP remains independently addressable within that IP scope. An
+untrusted proxy that supplies X-Real-IP is rejected instead of being treated as
+one shared user address.
 
 Verification includes two simulated PCs sharing a reverse proxy: each sees only
 its own Client and sends device queries, test requests, and report reads only to

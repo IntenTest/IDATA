@@ -44,7 +44,6 @@ func TestPairingCandidatesUseDirectSourceIPWithoutGrantingAccess(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/pairing-candidates", nil)
 	request.RemoteAddr = "203.0.113.10:52000"
 	request.Header.Set("X-Forwarded-For", "198.51.100.20")
-	request.Header.Set("X-Real-IP", "198.51.100.20")
 	response := httptest.NewRecorder()
 	app.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {

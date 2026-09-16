@@ -82,6 +82,7 @@ exec /usr/bin/install "${args[@]}"
         config = self.root / 'etc/idata/idata-server.env'
         original = config.read_text()
         self.assertIn('IDATA_LISTEN_ADDR=:12345', original)
+        self.assertIn('IDATA_TRUSTED_PROXIES=127.0.0.1,::1', original)
         self.assertEqual(config.stat().st_mode & 0o777, 0o640)
         state = self.root / 'var/lib/idata'
         state.mkdir(parents=True)

@@ -8,10 +8,15 @@
     visible: false,
     message: "Looking for the IDATA Client…",
     language: localStorage.getItem("idata-language") === "en" ? "en" : "zh-CN",
+    browserIP: "",
+    clientIP: "",
+    proxyIP: "",
   });
+  window.IDATAConnectionInfo = connection;
   const translations = {
   "Multiple Clients use this PC address. Keep one Client running on this PC.": "检测到同一台 PC 地址有多个客户端，请只保留一个客户端运行。",
   "The configured proxy must supply one valid X-Real-IP value.": "服务器代理未正确传递本机 IP，请检查代理配置。",
+  "The reverse proxy is not trusted. Device matching was blocked to prevent cross-PC access.": "服务器尚未信任当前反向代理。为防止访问到其他电脑，已停止设备匹配。请将代理 IP 加入 IDATA_TRUSTED_PROXIES。",
   "Connect IDATA Client": "连接 IDATA 客户端",
   "Open IDATA Client": "启动 IDATA 客户端",
   "Client started — refresh connection": "已启动客户端，刷新连接",
@@ -26,7 +31,14 @@
   "The IDATA Client disconnected. Reopen it to continue.": "IDATA 客户端已断开，请重新启动客户端以继续。",
   "Opening IDATA Client and waiting for it to connect…": "正在启动 IDATA 客户端，等待接入…",
   "Connect the IDATA Client to continue.": "请连接 IDATA 客户端以继续。",
-  "The server connection was interrupted. Reopen IDATA Client if needed.": "服务器连接已中断，请检查网络，必要时重新启动 IDATA 客户端。"
+  "The server connection was interrupted. Reopen IDATA Client if needed.": "服务器连接已中断，请检查网络，必要时重新启动 IDATA 客户端。",
+  "Current web access IP": "当前网页接入 IP",
+  "Matched Client connection IP": "匹配的 Client 接入 IP",
+  "Reverse proxy IP": "反向代理 IP",
+  "Not connected": "尚未连接",
+  "IP matching is confirmed.": "网页 IP 与 Client IP 匹配成功。",
+  "Waiting for a Client from this IP.": "正在等待同一 IP 的 Client 接入。",
+  "IP mismatch; access is blocked.": "IP 不一致，已阻止访问。"
 };
   const t = (message) => connection.language === "zh-CN"
     ? translations[message] || translations["The IDATA Client connection is unavailable."]
@@ -43,7 +55,7 @@
       <el-dialog
         v-model="connection.visible"
         :title="t('Connect IDATA Client')"
-        width="520px"
+        width="560px"
         :show-close="false"
         :close-on-click-modal="false"
         :close-on-press-escape="false"
@@ -55,6 +67,30 @@
           {{ t('Open IDATA Client on this computer to access devices and run tests. This page will refresh automatically when the client connects.') }}
         </p>
         <el-alert :title="t(connection.message)" type="info" :closable="false" show-icon />
+        <div class="remote-ip-summary">
+          <div>
+            <span>{{ t('Current web access IP') }}</span>
+            <strong>{{ connection.browserIP || '—' }}</strong>
+          </div>
+          <div>
+            <span>{{ t('Matched Client connection IP') }}</span>
+            <strong>{{ connection.clientIP || t('Not connected') }}</strong>
+          </div>
+          <div v-if="connection.proxyIP">
+            <span>{{ t('Reverse proxy IP') }}</span>
+            <strong>{{ connection.proxyIP }}</strong>
+          </div>
+          <el-tag
+            :type="connection.clientIP && connection.clientIP === connection.browserIP ? 'success' : connection.clientIP ? 'danger' : 'info'"
+            effect="light"
+          >
+            {{ t(connection.clientIP && connection.clientIP === connection.browserIP
+              ? 'IP matching is confirmed.'
+              : connection.clientIP
+                ? 'IP mismatch; access is blocked.'
+                : 'Waiting for a Client from this IP.') }}
+          </el-tag>
+        </div>
         <template #footer>
           <el-button @click="refreshConnection">{{ t('Client started — refresh connection') }}</el-button>
           <el-button type="primary" @click="openWindowsClient">{{ t('Open IDATA Client') }}</el-button>
@@ -69,6 +105,15 @@
   function showConnectionDialog(message) {
     connection.message = message || "Looking for the IDATA Client…";
     connection.visible = true;
+  }
+
+  function updateConnectionInfo(result) {
+    if (!result || typeof result !== "object") return;
+    if (typeof result.browser_ip === "string" && result.browser_ip) {
+      connection.browserIP = result.browser_ip;
+    }
+    connection.clientIP = typeof result.client_ip === "string" ? result.client_ip : "";
+    connection.proxyIP = typeof result.proxy_ip === "string" ? result.proxy_ip : "";
   }
 
   function setConnected(clientID) {
@@ -102,6 +147,7 @@
       try {
         const login = await fetch(endpoint("api/v1/ip-login"), { method: "POST", cache: "no-store" });
         const loginResult = await login.clone().json().catch(() => ({}));
+        updateConnectionInfo(loginResult);
         if (!login.ok && login.status !== 202) {
           throw new Error(loginResult.error || "The server could not authorize this browser.");
         }
@@ -115,6 +161,7 @@
         const response = await fetch(endpoint("api/v1/self"), { cache: "no-store" });
         if (!response.ok) throw new Error("The IDATA Client connection is not ready.");
         const result = await response.json();
+        updateConnectionInfo(result);
         const clients = result.clients || [];
         const selected = clients.length === 1 ? clients[0] : null;
         if (!selected) throw new Error("No IDATA execution client is available.");
@@ -147,6 +194,7 @@
   function connectionLost(message) {
     state.observedDisconnected = true;
     state.client = "";
+    connection.clientIP = "";
     void connect(message || "The IDATA Client disconnected. Reopen it to continue.");
   }
 
@@ -182,6 +230,7 @@
       const response = await fetch(endpoint("api/v1/self"), { cache: "no-store" });
       if (!response.ok) return connectionLost("The IDATA Client disconnected. Reopen it to continue.");
       const result = await response.json();
+      updateConnectionInfo(result);
       if (!(result.clients || []).some((item) => item.id === state.client)) {
         connectionLost("The IDATA Client disconnected. Reopen it to continue.");
       }

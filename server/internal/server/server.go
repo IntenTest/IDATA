@@ -18,7 +18,7 @@ import (
 	"idata-server/internal/protocol"
 )
 
-const ReleaseVersion = "0.2.40"
+const ReleaseVersion = "0.2.41"
 
 const maxRequestBody = 64 << 10
 
@@ -640,6 +640,8 @@ func (s *Server) handleClients(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleSelf(w http.ResponseWriter, r *http.Request) {
+	browserIP, _ := addressIP(r.RemoteAddr)
+	browserIPText := browserIP.String()
 	if clients, expiresAt, err := s.pairings.clientsForIPSession(r, s.hub); err == nil {
 		if len(clients) > 1 {
 			writeError(w, 409, "Multiple Clients use this PC address. Keep one Client running on this PC.")
@@ -647,6 +649,7 @@ func (s *Server) handleSelf(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"clients": clients, "auth_mode": "ip_session",
+			"browser_ip": browserIPText, "client_ip": matchedClientIP(clients, browserIPText),
 			"session_expires_at": expiresAt.UTC().Format(time.RFC3339),
 		})
 		return
@@ -654,6 +657,7 @@ func (s *Server) handleSelf(w http.ResponseWriter, r *http.Request) {
 	if client, expiresAt, err := s.pairings.clientForRequest(r, s.hub); err == nil {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"clients": oneClient(client), "self_client_id": client.info.ID,
+			"browser_ip": browserIPText, "client_ip": clientRemoteIP(client),
 			"auth_mode": "session", "session_expires_at": expiresAt.UTC().Format(time.RFC3339),
 		})
 		return
@@ -675,7 +679,26 @@ func (s *Server) handleSelf(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"clients": clients, "self_client_id": selfClientID, "auth_mode": "device",
+		"browser_ip": browserIPText, "client_ip": "",
 	})
+}
+
+func matchedClientIP(clients []protocol.ClientInfo, browserIP string) string {
+	if len(clients) == 1 {
+		return browserIP
+	}
+	return ""
+}
+
+func clientRemoteIP(client *clientConn) string {
+	if client == nil {
+		return ""
+	}
+	ip, err := addressIP(client.info.RemoteAddress)
+	if err != nil {
+		return ""
+	}
+	return ip.String()
 }
 
 func (s *Server) handleIPLogin(w http.ResponseWriter, r *http.Request) {
@@ -689,11 +712,19 @@ func (s *Server) handleIPLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(clients) > 1 {
-		writeError(w, 409, "Multiple Clients use this PC address. Keep one Client running on this PC.")
+		browserIP, _ := addressIP(r.RemoteAddr)
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":      "Multiple Clients use this PC address. Keep one Client running on this PC.",
+			"error_code": "multiple_clients", "browser_ip": browserIP.String(), "client_ip": "",
+		})
 		return
 	}
+	browserIP, _ := addressIP(r.RemoteAddr)
+	browserIPText := browserIP.String()
 	if len(clients) == 0 {
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": "waiting"})
+		writeJSON(w, http.StatusAccepted, map[string]string{
+			"status": "waiting", "browser_ip": browserIPText, "client_ip": "",
+		})
 		return
 	}
 	token, expiresAt, err := s.pairings.createIPSession(r.RemoteAddr)
@@ -705,6 +736,7 @@ func (s *Server) handleIPLogin(w http.ResponseWriter, r *http.Request) {
 	setDeviceSessionCookie(w, r, token, expiresAt)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "approved", "client_count": len(clients),
+		"browser_ip": browserIPText, "client_ip": browserIPText,
 		"session_expires_at": expiresAt.UTC().Format(time.RFC3339),
 	})
 }

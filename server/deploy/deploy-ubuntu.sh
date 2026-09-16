@@ -10,7 +10,7 @@ fail() { echo "ERROR: $*" >&2; exit 1; }
 . /etc/os-release
 [[ $ID == ubuntu ]] || fail 'This installer supports Ubuntu Server.'
 [[ -d /run/systemd/system ]] || fail 'systemd must be running.'
-for command in systemctl sha256sum awk od timeout ss flock install cp mv getent useradd groupadd; do
+for command in systemctl sha256sum awk od timeout ss flock install cp mv getent useradd groupadd hostname; do
     command -v "$command" >/dev/null || fail "Required Ubuntu utility missing: $command"
 done
 exec 9>/run/lock/idata-deploy.lock
@@ -19,6 +19,11 @@ source_dir=$(cd -- "${1:-$(dirname -- "${BASH_SOURCE[0]}")}" && pwd)
 binary=idata-server-linux-amd64
 [[ -f $source_dir/$binary && -f $source_dir/SHA256SUMS ]] || fail "Place $binary and SHA256SUMS beside the script (or pass their directory)."
 work=$(mktemp -d /opt/idata-deploy.XXXXXXXX)
+default_trusted_proxies=127.0.0.1,::1
+for local_address in $(hostname -I 2>/dev/null); do
+    [[ $local_address != *,* && $local_address != *%* ]] || continue
+    default_trusted_proxies+=,$local_address
+done
 backup=
 changed=false
 was_active=false
@@ -53,6 +58,7 @@ IDATA_ENROLLMENT_AUTO_APPROVE=true
 IDATA_BROWSER_PAIRING=false
 IDATA_PAIRING_REQUEST_TTL=2m
 IDATA_DEVICE_SESSION_TTL=8h
+IDATA_TRUSTED_PROXIES=$default_trusted_proxies
 CONFIG
     unset token
 fi
@@ -72,6 +78,9 @@ health_host=${health_host#[}
 health_host=${health_host%]}
 case $health_host in ''|0.0.0.0|::) health_host=127.0.0.1 ;; esac
 printf '\nIDATA_LISTEN_ADDR=%s\n' "$listen_addr" >> "$work/env"
+if ! awk '/^[[:space:]]*IDATA_TRUSTED_PROXIES[[:space:]]*=/{found=1} END{exit !found}' "$work/env"; then
+    printf '\nIDATA_TRUSTED_PROXIES=%s\n' "$default_trusted_proxies" >> "$work/env"
+fi
 if [[ ${IDATA_DEPLOY_TRUSTED_PROXIES+x} ]]; then
     [[ $IDATA_DEPLOY_TRUSTED_PROXIES != *$'\n'* && $IDATA_DEPLOY_TRUSTED_PROXIES != *$'\r'* ]] || fail 'Proxy addresses must be one comma-separated line.'
     awk '!/^[[:space:]]*IDATA_TRUSTED_PROXIES[[:space:]]*=/' "$work/env" > "$work/env.filtered"

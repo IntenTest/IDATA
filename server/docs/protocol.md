@@ -63,7 +63,10 @@ The server exposes these operations at
 an administrator bearer token or a device/IP browser session authorized for that PC.
 Browser IP sessions are scoped to the unique Client at the same effective PC
 IP. Explicitly configured proxies supply X-Real-IP; other peers use their socket
-address. All HTTP/WebSocket handlers apply the same PC scope. HTML reports are
+address. A peer that supplies X-Real-IP without being configured as trusted is
+rejected, preventing a proxy misconfiguration from collapsing all users into one
+device scope. Login and self responses expose the effective browser and matched
+Client IPs for diagnosis. All HTTP/WebSocket handlers apply the same PC scope. HTML reports are
 sandboxed and cannot run scripts against the control origin.
 
 Test case archives: POST /api/test-cases/update starts or rejoins a background update;

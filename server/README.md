@@ -46,7 +46,10 @@ The browser launch uses the current public URL to open the local Client.
 Browser sessions are matched to the unique Client at the same effective PC IP.
 Nginx's own address is configured through `IDATA_TRUSTED_PROXIES`; requests from
 that proxy use its single `X-Real-IP` value. Direct connections use their socket
-peer address. All HTTP and WebSocket operations use the same normalization.
+peer address. An untrusted peer that supplies `X-Real-IP` is rejected instead of
+being treated as a shared user address. All HTTP and WebSocket operations use the
+same normalization. The connection dialog and Settings page show both the browser
+IP and the matched Client IP.
 
 Users only see their own PC's Client. Device queries, tests, reports, and terminal
 operations are limited to that Client. Conflicting Clients at one IP produce an

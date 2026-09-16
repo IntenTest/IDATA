@@ -168,7 +168,7 @@ func TestIDATAWorkspaceIsTheOnlyEmbeddedWebPage(t *testing.T) {
 	}
 	remote := httptest.NewRecorder()
 	app.Handler().ServeHTTP(remote, httptest.NewRequest(http.MethodGet, "/remote.js", nil))
-	for _, label := range []string{"Open IDATA Client", "启动 IDATA 客户端", "<el-dialog", ":close-on-click-modal=\"false\"", ":close-on-press-escape=\"false\"", ":show-close=\"false\""} {
+	for _, label := range []string{"Open IDATA Client", "启动 IDATA 客户端", "Current web access IP", "Matched Client connection IP", "<el-dialog", ":close-on-click-modal=\"false\"", ":close-on-press-escape=\"false\"", ":show-close=\"false\""} {
 		if !strings.Contains(remote.Body.String(), label) {
 			t.Fatalf("connection action %q was not served", label)
 		}
@@ -176,7 +176,7 @@ func TestIDATAWorkspaceIsTheOnlyEmbeddedWebPage(t *testing.T) {
 	if strings.Contains(remote.Body.String(), "[401, 403, 409, 502, 503]") {
 		t.Fatal("command failures still trigger the client disconnect/reload loop")
 	}
-	if !strings.Contains(response.Body.String(), "remote.js?v=20260915-command-stdin-v2") {
+	if !strings.Contains(response.Body.String(), "remote.js?v=20260916-ip-scope") {
 		t.Fatal("remote connection script cache was not invalidated")
 	}
 	if strings.Contains(response.Body.String(), "iData Console") {

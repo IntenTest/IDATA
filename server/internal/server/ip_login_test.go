@@ -30,11 +30,13 @@ func TestIPLoginAuthorizesOnlyTheUniqueSameIPClient(t *testing.T) {
 	var loginBody struct {
 		Status      string `json:"status"`
 		ClientCount int    `json:"client_count"`
+		BrowserIP   string `json:"browser_ip"`
+		ClientIP    string `json:"client_ip"`
 	}
 	if err := json.Unmarshal(loginResponse.Body.Bytes(), &loginBody); err != nil {
 		t.Fatal(err)
 	}
-	if loginBody.Status != "approved" || loginBody.ClientCount != 1 {
+	if loginBody.Status != "approved" || loginBody.ClientCount != 1 || loginBody.BrowserIP != "203.0.113.10" || loginBody.ClientIP != loginBody.BrowserIP {
 		t.Fatalf("login response = %#v", loginBody)
 	}
 	result := loginResponse.Result()
@@ -58,13 +60,15 @@ func TestIPLoginAuthorizesOnlyTheUniqueSameIPClient(t *testing.T) {
 		t.Fatalf("self status = %d; body = %s", selfResponse.Code, selfResponse.Body.String())
 	}
 	var selfBody struct {
-		AuthMode string                `json:"auth_mode"`
-		Clients  []protocol.ClientInfo `json:"clients"`
+		AuthMode  string                `json:"auth_mode"`
+		Clients   []protocol.ClientInfo `json:"clients"`
+		BrowserIP string                `json:"browser_ip"`
+		ClientIP  string                `json:"client_ip"`
 	}
 	if err := json.Unmarshal(selfResponse.Body.Bytes(), &selfBody); err != nil {
 		t.Fatal(err)
 	}
-	if selfBody.AuthMode != "ip_session" || len(selfBody.Clients) != 1 || selfBody.Clients[0].ID != "first-pc" {
+	if selfBody.AuthMode != "ip_session" || len(selfBody.Clients) != 1 || selfBody.Clients[0].ID != "first-pc" || selfBody.BrowserIP != "203.0.113.10" || selfBody.ClientIP != selfBody.BrowserIP {
 		t.Fatalf("self response = %#v", selfBody)
 	}
 	if selfBody.Clients[0].RemoteAddress != "" {
@@ -109,6 +113,14 @@ func TestIPLoginWaitsForAClientAndRequiresSameOrigin(t *testing.T) {
 	app.Handler().ServeHTTP(waitingResponse, waiting)
 	if waitingResponse.Code != http.StatusAccepted || len(waitingResponse.Result().Cookies()) != 0 {
 		t.Fatalf("waiting response status = %d cookies = %#v", waitingResponse.Code, waitingResponse.Result().Cookies())
+	}
+	var waitingBody struct {
+		Status    string `json:"status"`
+		BrowserIP string `json:"browser_ip"`
+		ClientIP  string `json:"client_ip"`
+	}
+	if json.Unmarshal(waitingResponse.Body.Bytes(), &waitingBody) != nil || waitingBody.Status != "waiting" || waitingBody.BrowserIP != "203.0.113.10" || waitingBody.ClientIP != "" {
+		t.Fatalf("waiting response body = %s", waitingResponse.Body.String())
 	}
 }
 
