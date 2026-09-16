@@ -234,7 +234,7 @@ func (p *pairingManager) clientForRequest(r *http.Request, hub *Hub) (*clientCon
 	if err != nil || session.ipScope {
 		return nil, time.Time{}, ErrDeviceSession
 	}
-	client := hub.get(session.clientID)
+	client := hub.clientForSession(session.clientID, session.deviceTokenHash)
 	if client == nil || !strings.EqualFold(client.info.OS, "windows") || client.deviceTokenHash == "" || !secureEqual(client.deviceTokenHash, session.deviceTokenHash) {
 		return nil, time.Time{}, ErrDeviceSession
 	}

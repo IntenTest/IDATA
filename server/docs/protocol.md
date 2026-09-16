@@ -10,12 +10,12 @@ command with the generic shell executor and returns the matching `result`.
 
 Allowed operations:
 
-- GET /api/devices, /api/settings, /api/model-config, /api/test-cases, /api/test-runs
+- GET /api/devices, /api/settings, /api/test-cases, /api/test-runs
 - POST /api/test-runs
 - POST /api/test-runs/{run}/close
 - POST /api/test-runs/{run}/reports/{case}/open (legacy local report opening)
 - GET /api/test-runs/{run}/reports/{case}/content (remote report viewing)
-- PUT /api/settings, /api/model-config
+- PUT /api/settings
 
 Arbitrary URLs, query parameters, static-file paths, and other methods are rejected
 by the Server before command generation. The Client allows four concurrent commands,

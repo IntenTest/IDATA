@@ -212,19 +212,6 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Reset defaults": "恢复默认值",
   "Settings restored to defaults.": "设置已恢复为默认值。",
   "Settings saved.": "设置已保存。",
-  "Inspection model": "检测模型",
-  "Configure the model API used by inspection features.": "配置检测功能使用的模型接口。",
-  "Model configuration file": "模型配置文件",
-  "API base URL": "API 基础地址",
-  "API key": "API 密钥",
-  "Model name": "模型名称",
-  "Load model configuration": "重新加载模型配置",
-  "Save model configuration": "保存模型配置",
-  "Model configuration unavailable": "模型配置不可用",
-  "Model configuration saved.": "模型配置已保存。",
-  "Model configuration incomplete": "模型配置不完整",
-  "Configure the API base URL, model name, and API key before creating a test run.": "新建测试任务前，请先配置 API 基础地址、模型名称和 API 密钥。",
-  "Go to settings": "前往配置",
   "Continue": "继续",
   "Inspection mode": "检查模式",
   "Execution log inspection": "执行日志检测",
@@ -748,10 +735,6 @@ const App = {
     const testCaseUpdating = ref(false);
     const testCaseUpdateStatus = ref("");
     const settingsSavedAt = ref("");
-    const modelConfig = reactive({ api_base: "", api_key: "", model_name: "" });
-    const modelConfigLoading = ref(false);
-    const modelConfigSaving = ref(false);
-    const modelConfigError = ref("");
     let settingsLoaded = false;
     let applyingSettings = false;
     let settingsSaveTimer = 0;
@@ -1280,10 +1263,6 @@ const App = {
       }
       if (view === "Settings") {
         loadSettings();
-        loadModelConfig();
-      }
-      if (view === "New Test Run") {
-        checkModelConfigForNewTestRun();
       }
       if (["Test Cases", "New Test Run"].includes(view) && settingsLoaded) {
         loadTestCases();
@@ -1513,79 +1492,6 @@ const App = {
           error instanceof Error ? error.message : "Unable to save settings.";
       } finally {
         settingsSaving.value = false;
-      }
-    }
-
-    async function loadModelConfig() {
-      modelConfigLoading.value = true;
-      modelConfigError.value = "";
-      try {
-        const response = await fetch("/api/model-config", { cache: "no-store" });
-        const result = await response.json();
-        if (!response.ok) {
-          throw new Error(result.error || `The model configuration service returned HTTP ${response.status}.`);
-        }
-        Object.assign(modelConfig, result.modelConfig || {});
-        return true;
-      } catch (error) {
-        modelConfigError.value = error instanceof Error ? error.message : "Unable to load the model configuration.";
-        return false;
-      } finally {
-        modelConfigLoading.value = false;
-      }
-    }
-
-    async function checkModelConfigForNewTestRun() {
-      const loaded = await loadModelConfig();
-      const requiredValues = [
-        modelConfig.api_base,
-        modelConfig.model_name,
-        modelConfig.api_key,
-      ];
-      if (
-        loaded &&
-        requiredValues.every(
-          (value) => typeof value === "string" && value.trim(),
-        )
-      ) {
-        return;
-      }
-
-      try {
-        await ElementPlus.ElMessageBox.confirm(
-          t("Configure the API base URL, model name, and API key before creating a test run."),
-          t("Model configuration incomplete"),
-          {
-            confirmButtonText: t("Go to settings"),
-            cancelButtonText: t("Continue"),
-            type: "warning",
-          },
-        );
-        selectView("Settings");
-      } catch (_error) {
-        // The user chose to continue configuring the test run.
-      }
-    }
-
-    async function saveModelConfig() {
-      modelConfigSaving.value = true;
-      modelConfigError.value = "";
-      try {
-        const response = await fetch("/api/model-config", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ modelConfig }),
-        });
-        const result = await response.json();
-        if (!response.ok) {
-          throw new Error(result.error || `The model configuration service returned HTTP ${response.status}.`);
-        }
-        Object.assign(modelConfig, result.modelConfig || {});
-        ElementPlus.ElMessage({ message: t("Model configuration saved."), type: "success" });
-      } catch (error) {
-        modelConfigError.value = error instanceof Error ? error.message : "Unable to save the model configuration.";
-      } finally {
-        modelConfigSaving.value = false;
       }
     }
 
@@ -2212,12 +2118,6 @@ const App = {
       settingsLoading,
       settingsSaving,
       settingsSavedAt,
-      modelConfig,
-      modelConfigError,
-      modelConfigLoading,
-      modelConfigSaving,
-      loadModelConfig,
-      saveModelConfig,
       today,
       changeTestCaseSort,
       deviceOptions: devices,
@@ -3522,49 +3422,6 @@ const App = {
               </div>
             </el-form>
 
-            <el-form class="settings-form model-config-form" label-position="top" v-loading="modelConfigLoading">
-              <div class="settings-section-heading">
-                <div>
-                  <p class="eyebrow">{{ t('Inspection model') }}</p>
-                  <h3>{{ t('Configure the model API used by inspection features.') }}</h3>
-                </div>
-                <div class="settings-source-path">
-                  <span>{{ t('Model configuration file') }}</span>
-                  <strong>../../Phoebe-main/Phoebe/tools/llm_analyzer.py</strong>
-                </div>
-              </div>
-
-              <el-alert
-                v-if="modelConfigError"
-                class="settings-alert"
-                type="error"
-                :title="t('Model configuration unavailable')"
-                :description="modelConfigError"
-                show-icon
-                :closable="false"
-              />
-
-              <div class="settings-grid model-config-grid">
-                <el-form-item :label="t('API base URL')">
-                  <el-input v-model="modelConfig.api_base" placeholder="https://api.example.com/v1" />
-                </el-form-item>
-                <el-form-item :label="t('Model name')">
-                  <el-input v-model="modelConfig.model_name" placeholder="model-name" />
-                </el-form-item>
-                <el-form-item class="settings-path-field" :label="t('API key')">
-                  <el-input v-model="modelConfig.api_key" type="password" show-password autocomplete="off" />
-                </el-form-item>
-              </div>
-
-              <div class="settings-actions">
-                <el-button plain @click="loadModelConfig">
-                  {{ t('Load model configuration') }}
-                </el-button>
-                <el-button type="primary" :loading="modelConfigSaving" @click="saveModelConfig">
-                  {{ t('Save model configuration') }}
-                </el-button>
-              </div>
-            </el-form>
           </section>
         </template>
 

@@ -19,7 +19,6 @@ import (
 )
 
 var (
-	ErrClientIDInUse         = errors.New("client ID is already active on another PC; configure a unique client ID")
 	ErrClientOffline         = errors.New("client is not online")
 	ErrConnectionEnded       = errors.New("client connection ended")
 	ErrDeviceTokenNotFound   = errors.New("device token does not match an online client")
@@ -37,17 +36,14 @@ func NewHub() *Hub {
 }
 
 func (h *Hub) register(client *clientConn) error {
-	h.mu.Lock()
-	previous := h.clients[client.info.ID]
-	if previous != nil {
-		previousIP, previousErr := addressIP(previous.info.RemoteAddress)
-		newIP, newErr := addressIP(client.info.RemoteAddress)
-		if previousErr != nil || newErr != nil || previousIP != newIP {
-			h.mu.Unlock()
-			return ErrClientIDInUse
-		}
+	clientIP, err := addressIP(client.info.RemoteAddress)
+	if err != nil {
+		return err
 	}
-	h.clients[client.info.ID] = client
+	key := clientIP.String() + "\x00" + client.info.ID
+	h.mu.Lock()
+	previous := h.clients[key]
+	h.clients[key] = client
 	h.mu.Unlock()
 
 	if previous != nil && previous != client {
@@ -58,8 +54,11 @@ func (h *Hub) register(client *clientConn) error {
 
 func (h *Hub) unregister(client *clientConn) {
 	h.mu.Lock()
-	if h.clients[client.info.ID] == client {
-		delete(h.clients, client.info.ID)
+	for key, registered := range h.clients {
+		if registered == client {
+			delete(h.clients, key)
+			break
+		}
 	}
 	h.mu.Unlock()
 }
@@ -71,15 +70,57 @@ func (h *Hub) List() []protocol.ClientInfo {
 		clients = append(clients, client.info)
 	}
 	h.mu.RUnlock()
-	sort.Slice(clients, func(i, j int) bool { return clients[i].ID < clients[j].ID })
+	sort.Slice(clients, func(i, j int) bool {
+		if clients[i].ID == clients[j].ID {
+			return clients[i].RemoteAddress < clients[j].RemoteAddress
+		}
+		return clients[i].ID < clients[j].ID
+	})
 	return clients
 }
 
 func (h *Hub) get(clientID string) *clientConn {
 	h.mu.RLock()
-	client := h.clients[clientID]
+	var client *clientConn
+	for _, candidate := range h.clients {
+		if candidate.info.ID != clientID {
+			continue
+		}
+		if client != nil && client != candidate {
+			client = nil
+			break
+		}
+		client = candidate
+	}
 	h.mu.RUnlock()
 	return client
+}
+
+func (h *Hub) clientForSession(clientID, deviceTokenHash string) *clientConn {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	var match *clientConn
+	for _, client := range h.clients {
+		if client.info.ID != clientID || client.deviceTokenHash == "" || !secureEqual(client.deviceTokenHash, deviceTokenHash) {
+			continue
+		}
+		if match != nil && match != client {
+			return nil
+		}
+		match = client
+	}
+	return match
+}
+
+func (h *Hub) clientForCredential(credentialID string) *clientConn {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, client := range h.clients {
+		if client.credentialID == credentialID {
+			return client
+		}
+	}
+	return nil
 }
 
 func (h *Hub) clientForDeviceToken(deviceToken string) (*clientConn, error) {
@@ -159,21 +200,29 @@ func (h *Hub) clientsForIP(remoteAddress string) ([]protocol.ClientInfo, error) 
 }
 
 func (h *Hub) clientForIP(clientID, remoteAddress string) (*clientConn, error) {
-	clients, err := h.clientsForIP(remoteAddress)
-	if err != nil || len(clients) != 1 || clients[0].ID != clientID {
+	expected, err := addressIP(remoteAddress)
+	if err != nil {
 		return nil, ErrClientOffline
 	}
-	client := h.get(clientID)
-	if client == nil {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	var match *clientConn
+	for _, client := range h.clients {
+		actual, addressErr := addressIP(client.info.RemoteAddress)
+		if addressErr != nil || actual != expected {
+			continue
+		}
+		// A browser IP is deliberately unusable when more than one Client is
+		// online there, even if only one happens to use the requested ID.
+		if match != nil || client.info.ID != clientID {
+			return nil, ErrClientOffline
+		}
+		match = client
+	}
+	if match == nil {
 		return nil, ErrClientOffline
 	}
-	// Recheck after the lookup in case a same-ID connection replaced the entry.
-	expected, _ := addressIP(remoteAddress)
-	actual, err := addressIP(client.info.RemoteAddress)
-	if err != nil || actual != expected {
-		return nil, ErrClientOffline
-	}
-	return client, nil
+	return match, nil
 }
 
 func (h *Hub) clientForPairing(clientID, remoteAddress string) (*clientConn, error) {
@@ -181,15 +230,15 @@ func (h *Hub) clientForPairing(clientID, remoteAddress string) (*clientConn, err
 	if err != nil {
 		return nil, ErrPairingClientNotFound
 	}
-	client := h.get(clientID)
-	if client == nil || !strings.EqualFold(client.info.OS, "windows") || client.deviceTokenHash == "" || !hasCapability(client.info.Capabilities, "browser_pairing_v1") {
-		return nil, ErrPairingClientNotFound
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, client := range h.clients {
+		clientIP, addressErr := addressIP(client.info.RemoteAddress)
+		if addressErr == nil && clientIP == remoteIP && client.info.ID == clientID && strings.EqualFold(client.info.OS, "windows") && client.deviceTokenHash != "" && hasCapability(client.info.Capabilities, "browser_pairing_v1") {
+			return client, nil
+		}
 	}
-	clientIP, err := addressIP(client.info.RemoteAddress)
-	if err != nil || clientIP != remoteIP {
-		return nil, ErrPairingClientNotFound
-	}
-	return client, nil
+	return nil, ErrPairingClientNotFound
 }
 
 func (h *Hub) sanitizedList() []protocol.ClientInfo {

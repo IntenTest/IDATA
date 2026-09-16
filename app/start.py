@@ -7,7 +7,6 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock, Thread
 from urllib.parse import unquote, urlparse
-import ast
 import csv
 import json
 import os
@@ -33,12 +32,6 @@ APP_DIRECTORY = Path(__file__).resolve().parent
 PROJECT_DIRECTORY = APP_DIRECTORY.parent
 VENDOR_DIRECTORY = APP_DIRECTORY.parent / "vendor"
 SETTINGS_PATH = APP_DIRECTORY / "config" / "settings.json"
-MODEL_CONFIG_PATH = (
-    APP_DIRECTORY / ".." / ".." / "Phoebe-main" / "Phoebe" / "tools" / "llm_analyzer.py"
-).resolve()
-DEFAULT_MODEL_NAME = "Qwen3.8-27B-Q4"
-DEFAULT_MODEL_API_KEY = ""
-MODEL_API_KEY_ENVIRONMENT_VARIABLE = "IDATA_MODEL_API_KEY"
 IDATA_CLIENT_EXECUTABLE_DIRECTORY_ENVIRONMENT_VARIABLE = (
     "IDATA_CLIENT_EXECUTABLE_DIRECTORY"
 )
@@ -211,88 +204,6 @@ def write_settings(settings: dict) -> None:
         temp_name = temp_file.name
 
     Path(temp_name).replace(SETTINGS_PATH)
-
-
-def model_config_assignment(source: str) -> tuple[ast.Assign, dict]:
-    """Return the MODEL_CONFIG assignment and its literal dictionary value."""
-    try:
-        module = ast.parse(source, filename=str(MODEL_CONFIG_PATH))
-    except SyntaxError as error:
-        raise RuntimeError(f"Unable to parse the model configuration file: {error}") from error
-
-    for node in module.body:
-        if not isinstance(node, ast.Assign):
-            continue
-        if not any(
-            isinstance(target, ast.Name) and target.id == "MODEL_CONFIG"
-            for target in node.targets
-        ):
-            continue
-        try:
-            value = ast.literal_eval(node.value)
-        except (ValueError, TypeError, SyntaxError) as error:
-            raise RuntimeError("MODEL_CONFIG must be a Python dictionary literal.") from error
-        if not isinstance(value, dict):
-            raise RuntimeError("MODEL_CONFIG must be a Python dictionary literal.")
-        return node, value
-
-    raise RuntimeError("MODEL_CONFIG was not found in the model configuration file.")
-
-
-def read_model_config() -> dict:
-    if not MODEL_CONFIG_PATH.is_file():
-        raise RuntimeError(f"Model configuration file was not found: {MODEL_CONFIG_PATH}")
-    try:
-        source = MODEL_CONFIG_PATH.read_text(encoding="utf-8")
-    except OSError as error:
-        raise RuntimeError(f"Unable to read the model configuration file: {error}") from error
-
-    _, config = model_config_assignment(source)
-    return {
-        "api_base": str(config.get("api_base", "")),
-        "api_key": os.environ.get(
-            MODEL_API_KEY_ENVIRONMENT_VARIABLE,
-            str(config.get("api_key") or DEFAULT_MODEL_API_KEY),
-        ),
-        "model_name": str(config.get("model_name") or DEFAULT_MODEL_NAME),
-    }
-
-
-def write_model_config(incoming_config: dict) -> dict:
-    required_keys = ("api_base", "api_key", "model_name")
-    for key in required_keys:
-        if not isinstance(incoming_config.get(key), str):
-            raise RuntimeError(f"{key} must be a string.")
-
-    try:
-        source = MODEL_CONFIG_PATH.read_text(encoding="utf-8")
-    except OSError as error:
-        raise RuntimeError(f"Unable to read the model configuration file: {error}") from error
-
-    assignment, current_config = model_config_assignment(source)
-    current_config.update({key: incoming_config[key] for key in required_keys})
-    replacement = "MODEL_CONFIG = " + repr(current_config)
-    source_lines = source.splitlines(keepends=True)
-    start_offset = sum(len(line) for line in source_lines[: assignment.lineno - 1]) + assignment.col_offset
-    end_offset = sum(len(line) for line in source_lines[: assignment.end_lineno - 1]) + assignment.end_col_offset
-    updated_source = source[:start_offset] + replacement + source[end_offset:]
-
-    try:
-        with tempfile.NamedTemporaryFile(
-            "w",
-            delete=False,
-            dir=str(MODEL_CONFIG_PATH.parent),
-            prefix=".llm_analyzer.",
-            encoding="utf-8",
-            newline="",
-        ) as temp_file:
-            temp_file.write(updated_source)
-            temp_name = temp_file.name
-        Path(temp_name).replace(MODEL_CONFIG_PATH)
-    except OSError as error:
-        raise RuntimeError(f"Unable to save the model configuration file: {error}") from error
-
-    return {key: incoming_config[key] for key in required_keys}
 
 
 def configured_path(raw_path: str) -> Path:
@@ -1096,16 +1007,6 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
             send_json(self, status, result)
             return
 
-        if request_path == "/api/model-config":
-            try:
-                result = {"modelConfig": read_model_config()}
-                status = 200
-            except RuntimeError as error:
-                result = {"error": str(error)}
-                status = 500
-            send_json(self, status, result)
-            return
-
         super().do_GET()
 
     def do_POST(self) -> None:
@@ -1164,7 +1065,7 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
 
     def do_PUT(self) -> None:
         request_path = urlparse(self.path).path
-        if request_path not in {"/api/settings", "/api/model-config"}:
+        if request_path != "/api/settings":
             self.send_error(404)
             return
 
@@ -1174,30 +1075,20 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
             request_body = json.loads(raw_body.decode("utf-8") or "{}")
             if not isinstance(request_body, dict):
                 raise RuntimeError("Settings request must contain a JSON object.")
-            if request_path == "/api/model-config":
-                incoming_config = request_body.get("modelConfig", request_body)
-                if not isinstance(incoming_config, dict):
-                    raise RuntimeError("modelConfig must contain a JSON object.")
-                model_config = write_model_config(incoming_config)
-            else:
-                incoming_settings = request_body.get("settings", request_body)
-                if not isinstance(incoming_settings, dict):
-                    raise RuntimeError("settings must contain a JSON object.")
-                settings = normalize_settings(incoming_settings)
-                write_settings(settings)
+            incoming_settings = request_body.get("settings", request_body)
+            if not isinstance(incoming_settings, dict):
+                raise RuntimeError("settings must contain a JSON object.")
+            settings = normalize_settings(incoming_settings)
+            write_settings(settings)
             status = 200
         except (json.JSONDecodeError, RuntimeError, OSError) as error:
             result = {"error": str(error)}
             status = 400
         else:
-            result = (
-                {"modelConfig": model_config}
-                if request_path == "/api/model-config"
-                else {
-                    "settings": settings,
-                    "testCaseUpdateCommand": test_case_update_command(settings),
-                }
-            )
+            result = {
+                "settings": settings,
+                "testCaseUpdateCommand": test_case_update_command(settings),
+            }
         send_json(self, status, result)
 
     def translate_path(self, path: str) -> str:

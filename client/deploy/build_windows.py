@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=ROOT / "bin/idata-client-windows-amd64.exe")
+    parser.add_argument("--output", type=Path, default=ROOT / "bin/IDATA-Client.exe")
     args = parser.parse_args()
     args.output = args.output.resolve()
     args.output.parent.mkdir(parents=True, exist_ok=True)

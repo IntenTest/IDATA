@@ -14,7 +14,6 @@ $Utf8 = New-Object System.Text.UTF8Encoding($false)
 $State = Join-Path $env:USERPROFILE '.idata\server-command-runtime'
 $Library = Join-Path $env:USERPROFILE '.idata\newest_testcases'
 $SettingsPath = Join-Path $State 'settings.json'
-$ModelPath = Join-Path $State 'model-config.json'
 $UpdatePath = Join-Path $State 'test-case-update.json'
 [IO.Directory]::CreateDirectory($State) | Out-Null
 
@@ -359,10 +358,6 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
             Write-JsonFile $SettingsPath $current
         }
         return [ordered]@{settings=$current; networkZone='blue'; testCaseUpdateCommand=''}
-    }
-    if ($Operation -eq 'model-config') {
-        if ($Method -eq 'PUT') { $value = if ($Body.PSObject.Properties.Name -contains 'modelConfig') {$Body.modelConfig} else {$Body}; Write-JsonFile $ModelPath $value }
-        return [ordered]@{modelConfig=(Read-JsonFile $ModelPath ([ordered]@{api_base=''; api_key=''; model_name=''}))}
     }
     if ($Operation -eq 'devices') {
         try { $hdc = Get-ExternalExecutable 'hdc.exe'; $output = @(& $hdc list targets -v 2>&1); $code = $LASTEXITCODE }

@@ -14,7 +14,7 @@ Server 下发的管理 worker 会使用带 BOM 的 UTF-8 文件，避免中文�
 在任意 Go 开发机交叉编译无控制台窗口的 Windows EXE：
 
 ```bash
-python3 deploy/build_windows.py --output bin/idata-client-windows-amd64.exe
+python3 deploy/build_windows.py --output bin/IDATA-Client.exe
 ```
 
 仓库已包含 Windows AMD64 资源对象，构建时会自动嵌入 Common Controls v6、DPI 和
@@ -56,7 +56,7 @@ IDATA_SERVER_URL='ws://127.0.0.1:12345/ws/agent' ./idata-client
 ```powershell
 $env:IDATA_SERVER_URL = 'ws://服务器IP/ws/agent'
 $env:IDATA_CLIENT_ID = 'office-windows'
-.\idata-client-windows-amd64.exe
+.\IDATA-Client.exe
 ```
 
 双击 EXE 后会显示由 EXE 内部直接创建的原生 Windows 状态窗口，不依赖 PowerShell UI
@@ -106,7 +106,7 @@ Enter。Client 使用同一个 Server 地址自动注册和连接，页面执行
 
 Client 每次正常启动都会在当前 Windows 用户的 `HKCU\Software\Classes\idata` 注册 URL
 协议；不需要管理员权限。设置 `IDATA_REGISTER_URL_PROTOCOL=false` 可禁止后续注册，执行
-`idata-client.exe --unregister-url-protocol` 可删除现有注册。移动或重命名 EXE 后需重新
+`IDATA-Client.exe --unregister-url-protocol` 可删除现有注册。移动或重命名 EXE 后需重新
 运行一次，以更新协议指向的新路径。注册所需的 Windows 系统命令会隐藏运行，因此手动启动
 Client 时只显示一个主窗口。浏览器或 Windows 把链接规范化为 `idata://connect/?...` 时也可
 正常唤起，其他路径和额外参数仍会被拒绝。
@@ -123,7 +123,7 @@ Client 时只显示一个主窗口。浏览器或 Windows 把链接规范化为 
 Windows 也可以提前把下面两个文件放在同一目录后，直接双击 EXE：
 
 ```text
-idata-client.exe
+IDATA-Client.exe
 idata-client.json
 ```
 
@@ -171,7 +171,7 @@ EXE 同目录；如果该目录不可写，则保存在当前用户的本地应�
 ## Build the Windows release
 
 ```sh
-python3 deploy/build_windows.py --output ../bin/idata-client-windows-amd64.exe
+python3 deploy/build_windows.py --output ../bin/IDATA-Client.exe
 ```
 
 The build compiles only the Go Client. It does not download or embed Python,

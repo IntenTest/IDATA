@@ -73,8 +73,8 @@ test environment. Use absolute paths in the web Settings page.
 ## Preserved functions and integration changes
 
 - Original overview, devices, test cases, suites, test creation/details, settings,
-  model configuration, language selection, and styling are reused.
-- Device discovery, settings, model settings, case discovery, test start/status,
+  language selection, and styling are reused.
+- Device discovery, settings, case discovery, test start/status,
   and cancellation are routed to the selected PC through the existing WebSocket.
 - Original sequential command construction, console windows, logs, and process
   cancellation remain in the PC worker. The server never runs tests.
@@ -106,7 +106,7 @@ go test ./...
 go vet ./...
 go build -o ../bin/idata-client-darwin-arm64 ./cmd/idata-client
 GOOS=darwin GOARCH=amd64 go build -o ../bin/idata-client-darwin-amd64 ./cmd/idata-client
-python3 deploy/build_windows.py --output ../bin/idata-client-windows-amd64.exe
+python3 deploy/build_windows.py --output ../bin/IDATA-Client.exe
 ```
 
 No new third-party dependencies were added. Both repositories contain the protocol

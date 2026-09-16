@@ -236,12 +236,6 @@ def handle(operation, method, body):
             current.update({key: incoming[key] for key in DEFAULTS if key in incoming})
             atomic_json(SETTINGS, current)
         return {"settings": current, "networkZone": "blue", "testCaseUpdateCommand": ""}
-    if operation == "model-config":
-        path = STATE / "model-config.json"
-        if method == "PUT":
-            atomic_json(path, body.get("modelConfig", body))
-        value = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {"api_base": "", "api_key": "", "model_name": ""}
-        return {"modelConfig": value}
     if operation == "devices":
         result = subprocess.run(["hdc", "list", "targets", "-v"], capture_output=True, text=True, timeout=10)
         devices = [{"id": columns[0], "status": columns[2] if len(columns) > 2 else "Connected"} for line in result.stdout.splitlines() if (columns := line.split()) and columns[0].lower() not in {"empty", "[empty]"}]

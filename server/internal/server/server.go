@@ -18,7 +18,7 @@ import (
 	"idata-server/internal/protocol"
 )
 
-const ReleaseVersion = "0.2.39"
+const ReleaseVersion = "0.2.40"
 
 const maxRequestBody = 64 << 10
 
@@ -254,7 +254,7 @@ func (s *Server) handleCredentialRevoke(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid credential ID")
 		return
 	}
-	credential, err := s.enrollments.revoke(id)
+	_, err := s.enrollments.revoke(id)
 	if err != nil {
 		if errors.Is(err, errEnrollmentNotFound) {
 			writeError(w, http.StatusNotFound, "device credential not found")
@@ -264,7 +264,7 @@ func (s *Server) handleCredentialRevoke(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "could not revoke device credential")
 		return
 	}
-	if client := s.hub.get(credential.ClientID); client != nil && client.credentialID == id {
+	if client := s.hub.clientForCredential(id); client != nil {
 		client.close(websocket.ClosePolicyViolation, "device credential revoked")
 	}
 	w.WriteHeader(http.StatusNoContent)

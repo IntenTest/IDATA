@@ -32,7 +32,7 @@ type idataWorkerResponse struct {
 }
 
 var (
-	idataReadOperation  = regexp.MustCompile(`^(devices|settings|model-config|test-cases|test-cases/update|test-runs|test-runs/TR-[0-9]+/(reports|logs)/[A-Za-z0-9._%-]+/content)$`)
+	idataReadOperation  = regexp.MustCompile(`^(devices|settings|test-cases|test-cases/update|test-runs|test-runs/TR-[0-9]+/(reports|logs)/[A-Za-z0-9._%-]+/content)$`)
 	idataWriteOperation = regexp.MustCompile(`^(test-cases/update|test-runs|test-runs/TR-[0-9]+/close)$`)
 )
 
@@ -122,7 +122,7 @@ func (s *Server) handleIDATA(w http.ResponseWriter, r *http.Request) {
 	operation := r.PathValue("operation")
 	validOperation := r.Method == http.MethodGet && idataReadOperation.MatchString(operation) ||
 		r.Method == http.MethodPost && idataWriteOperation.MatchString(operation) ||
-		r.Method == http.MethodPut && (operation == "settings" || operation == "model-config")
+		r.Method == http.MethodPut && operation == "settings"
 	if !validOperation {
 		writeError(w, 400, "Invalid IDATA operation.")
 		return
