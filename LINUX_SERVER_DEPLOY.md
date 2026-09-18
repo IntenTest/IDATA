@@ -1,14 +1,18 @@
-# IDATA Linux 服务器重新部署（v0.2.47）
+# IDATA Linux 服务器重新部署（v0.2.48）
 
 本文用于在 Ubuntu x86-64 服务器上首次安装或升级 IDATA Server。
 重新部署会保留现有的监听地址、Token 和已批准的设备凭据。
 
-本次升级只需更新 Ubuntu Server（0.2.47）。网页和 Windows/Python 执行脚本已嵌入 Server。
+本次升级只需更新 Ubuntu Server（0.2.48）。网页和 Windows/Python 执行脚本已嵌入 Server。
 现有 Windows Client 0.7.17 可以继续使用，无需替换 IDATA.exe 或内网下载页的客户端。
 若仍使用更旧客户端，请升级至本 Release 附带的 IDATA-Client.exe（0.7.17）。
 Nginx、Token 和已有服务器地址配置无需调整。
 
-### Windows 工作目录变更
+本次新增：测试任务页操作列可删除任务；运行中任务需先强制关闭。删除后从历史和统计中移除，
+保留执行 PC 的本地报告、日志及内部任务记录，使用删除标记防止后台延迟写入使任务重新出现。
+从 v0.2.47 升级无需再次迁移数据；升级完成后刷新浏览器即可。
+
+### Windows 工作目录变更（从 v0.2.46 或更早版本升级时）
 
 新版默认使用 D:\.idata，保存用例库、执行日志、任务记录和执行设置。D 盘必须存在并可写；
 不会静默回退到 C 盘。macOS 仍使用 ~/.idata。
@@ -26,24 +30,24 @@ Nginx、Token 和已有服务器地址配置无需调整。
 
 推荐只下载以下两个文件：
 
-1. [`IDATA-ubuntu-v0.2.47.tar.gz`](https://github.com/IntenTest/IDATA/releases/download/v0.2.47/IDATA-ubuntu-v0.2.47.tar.gz)
+1. [`IDATA-ubuntu-v0.2.48.tar.gz`](https://github.com/IntenTest/IDATA/releases/download/v0.2.48/IDATA-ubuntu-v0.2.48.tar.gz)
    —— Ubuntu 完整部署包，内含 Linux Server、部署脚本、本文档和包内校验文件。
-2. [`SHA256SUMS`](https://github.com/IntenTest/IDATA/releases/download/v0.2.47/SHA256SUMS)
+2. [`SHA256SUMS`](https://github.com/IntenTest/IDATA/releases/download/v0.2.48/SHA256SUMS)
    ——用于校验下载的 `.tar.gz` 是否完整。
 
 Linux 服务器不需要下载 `IDATA-Client.exe`；该文件只用于
 Windows 执行电脑。Windows 用户应从同一 Release 下载
-[`IDATA-Client.exe`](https://github.com/IntenTest/IDATA/releases/download/v0.2.47/IDATA-Client.exe)。
+[`IDATA-Client.exe`](https://github.com/IntenTest/IDATA/releases/download/v0.2.48/IDATA-Client.exe)。
 
 如果 Ubuntu 服务器可以访问 GitHub，直接执行：
 
 ```bash
-mkdir -p "$HOME/idata-release-v0.2.47"
-cd "$HOME/idata-release-v0.2.47"
+mkdir -p "$HOME/idata-release-v0.2.48"
+cd "$HOME/idata-release-v0.2.48"
 curl --fail --location --remote-name \
-  https://github.com/IntenTest/IDATA/releases/download/v0.2.47/IDATA-ubuntu-v0.2.47.tar.gz
+  https://github.com/IntenTest/IDATA/releases/download/v0.2.48/IDATA-ubuntu-v0.2.48.tar.gz
 curl --fail --location --remote-name \
-  https://github.com/IntenTest/IDATA/releases/download/v0.2.47/SHA256SUMS
+  https://github.com/IntenTest/IDATA/releases/download/v0.2.48/SHA256SUMS
 ```
 
 如果服务器不能访问 GitHub，先在可联网电脑上下载上述两个文件，再通过
@@ -54,9 +58,9 @@ SCP、SFTP 或内网文件传输工具将它们放到 Ubuntu 服务器的同一�
 进入两个下载文件所在的目录，执行：
 
 ```bash
-grep ' IDATA-ubuntu-v0.2.47.tar.gz$' SHA256SUMS | sha256sum --check -
-tar -xzf IDATA-ubuntu-v0.2.47.tar.gz
-cd IDATA-ubuntu-v0.2.47
+grep ' IDATA-ubuntu-v0.2.48.tar.gz$' SHA256SUMS | sha256sum --check -
+tar -xzf IDATA-ubuntu-v0.2.48.tar.gz
+cd IDATA-ubuntu-v0.2.48
 sha256sum --check SHA256SUMS
 ```
 
@@ -99,7 +103,7 @@ curl --fail --silent --show-error http://127.0.0.1:12345/healthz
 默认端口的健康检查应返回：
 
 ```json
-{"status":"ok","version":"0.2.47"}
+{"status":"ok","version":"0.2.48"}
 ```
 
 如果原服务使用的不是 `12345` 端口，请将命令中的端口替换为

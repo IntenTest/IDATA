@@ -314,8 +314,19 @@ def handle(operation, method, body):
         subprocess.Popen([str(executable), "cli", "bundle", "run", "--path", str(worker)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
         return serialize_run(run)
     if operation == "test-runs" and method == "GET":
-        runs = [serialize_run(json.loads(path.read_text(encoding="utf-8"))) for path in RUNS.glob("TR-*.json")] if RUNS.is_dir() else []
+        runs = [serialize_run(json.loads(path.read_text(encoding="utf-8"))) for path in RUNS.glob("TR-*.json") if not path.with_suffix(".deleted").exists()] if RUNS.is_dir() else []
         return {"testRuns": sorted(runs, key=lambda item: item["startedAt"], reverse=True)}
+    match = re.fullmatch(r"test-runs/(TR-[0-9]+)", operation)
+    if match and method == "DELETE":
+        path = run_path(match.group(1))
+        marker = path.with_suffix(".deleted")
+        if not marker.exists():
+            run = json.loads(path.read_text(encoding="utf-8"))
+            if serialize_run(run)["status"] == "Running":
+                raise RuntimeError("Close the running test run before deleting it.")
+            # Separate tombstone survives any late write from a closing runner.
+            atomic_json(marker, {"id": match.group(1)})
+        return {"deleted": True, "id": match.group(1)}
     match = re.fullmatch(r"test-runs/(TR-[0-9]+)/close", operation)
     if match:
         path = run_path(match.group(1)); run = json.loads(path.read_text(encoding="utf-8")); run["stopRequested"] = True

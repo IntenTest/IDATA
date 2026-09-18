@@ -258,6 +258,12 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Closing...": "正在关闭……",
   "Close this test run?": "确认强制关闭此任务？",
   "The active execution window and all remaining test cases will be stopped. This action cannot be undone.": "执行窗口及所有剩余测试用例都将被终止，此操作无法撤销。",
+  "Delete test run": "删除测试任务",
+  "Delete this test run?": "确定删除此测试任务？",
+  "The task will be removed from history. Local report and log files will be kept.": "任务将从历史记录中删除，本地报告和日志文件会保留。",
+  "Test run deleted.": "测试任务已删除。",
+  "Unable to delete the test run.": "无法删除测试任务。",
+  "Close the running test run before deleting it.": "请先强制关闭运行中的测试任务，再删除。",
   "Test run closed.": "测试任务已强制关闭。",
   "Unable to close the test run.": "无法关闭测试任务。",
   "Execution interrupted": "执行中断",
@@ -777,6 +783,8 @@ const App = {
     const suitePageSize = ref(20);
     const testRunStarting = ref(false);
     const testRunClosing = ref(false);
+    const deletingTestRunIds = ref([]);
+    const deletedTestRunIds = new Set();
     const testRunError = ref("");
     const testCasesLoading = ref(false);
     const testCasesError = ref("");
@@ -1648,6 +1656,35 @@ const App = {
       }
     }
 
+    async function deleteTestRun(row) {
+      if (deletingTestRunIds.value.includes(row.id)) return;
+      if (row.status === "Running") {
+        ElementPlus.ElMessage({ message: t("Close the running test run before deleting it."), type: "warning" });
+        return;
+      }
+      try {
+        await ElementPlus.ElMessageBox.confirm(
+          `${row.id} · ${row.title}\n${t("The task will be removed from history. Local report and log files will be kept.")}`,
+          t("Delete this test run?"),
+          { confirmButtonText: t("Delete test run"), cancelButtonText: t("Cancel"), type: "warning" },
+        );
+      } catch (_error) { return; }
+      deletingTestRunIds.value.push(row.id);
+      try {
+        const response = await window.idataFetch(`/api/test-runs/${encodeURIComponent(row.id)}`, { method: "DELETE" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Unable to delete the test run.");
+        deletedTestRunIds.add(row.id);
+        testRuns.value = testRuns.value.filter((run) => run.id !== row.id);
+        if (selectedTestRunId.value === row.id) selectedTestRunId.value = "";
+        ElementPlus.ElMessage({ message: t("Test run deleted."), type: "success" });
+      } catch (error) {
+        ElementPlus.ElMessage({ message: t(error instanceof Error ? error.message : "Unable to delete the test run."), type: "error" });
+      } finally {
+        deletingTestRunIds.value = deletingTestRunIds.value.filter((id) => id !== row.id);
+      }
+    }
+
     async function closeTestRun() {
       if (!selectedTestRun.value || selectedTestRun.value.status !== "Running") {
         return;
@@ -2036,7 +2073,10 @@ const App = {
           return;
         }
         const result = await response.json();
-        result.testRuns.forEach(upsertActiveTestRun);
+        const visibleRuns = result.testRuns.filter((run) => !deletedTestRunIds.has(run.id));
+        const ids = new Set(visibleRuns.map((run) => run.id));
+        testRuns.value = testRuns.value.filter((run) => ids.has(run.id));
+        visibleRuns.forEach(upsertActiveTestRun);
       } catch (_error) {
         // Keep the last known state while the local service is temporarily unavailable.
       }
@@ -2093,6 +2133,8 @@ const App = {
       openTestReport,
       downloadTestLog,
       closeTestRun,
+      deleteTestRun,
+      deletingTestRunIds,
       pageSize,
       paginatedTestCases,
       paginatedTestSuites,
@@ -2532,10 +2574,13 @@ const App = {
               <el-table-column :label="t('Started at')" width="185">
                 <template #default="{ row }">{{ row.startedAt ? new Date(row.startedAt).toLocaleString(isChinese ? 'zh-CN' : 'en-GB', { hour12: false }) : '—' }}</template>
               </el-table-column>
-              <el-table-column :label="t('Actions')" width="90" fixed="right">
+              <el-table-column :label="t('Actions')" width="220" fixed="right">
                 <template #default="{ row }">
                   <el-button plain size="small" @click.stop="selectTestRun(row)">
                     {{ t('View') }}
+                  </el-button>
+                  <el-button plain size="small" type="danger" :loading="deletingTestRunIds.includes(row.id)" @click.stop="deleteTestRun(row)">
+                    {{ t('Delete test run') }}
                   </el-button>
                 </template>
               </el-table-column>

@@ -441,7 +441,7 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
     }
     if ($Operation -eq 'test-runs' -and $Method -eq 'GET') {
         $runsPath = Join-Path $State 'runs'; $runs = @()
-        if (Test-Path -LiteralPath $runsPath) { $runs = @(Get-ChildItem -LiteralPath $runsPath -File -Filter 'TR-*.json' | ForEach-Object { Serialize-Run (Read-JsonFile $_.FullName $null) } | Sort-Object startedAt -Descending) }
+        if (Test-Path -LiteralPath $runsPath) { $runs = @(Get-ChildItem -LiteralPath $runsPath -File -Filter 'TR-*.json' | Where-Object { -not (Test-Path -LiteralPath ([IO.Path]::ChangeExtension($_.FullName, '.deleted'))) } | ForEach-Object { Serialize-Run (Read-JsonFile $_.FullName $null) } | Sort-Object startedAt -Descending) }
         return [ordered]@{testRuns=$runs}
     }
     if ($Operation -eq 'test-runs' -and $Method -eq 'POST') {
@@ -460,6 +460,18 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
         $run = [ordered]@{id=$runID; title=[string]$Body.name; device=$device; inspectionMode=$mode; startedAt=[DateTimeOffset]::Now.ToString('yyyy-MM-ddTHH:mm:ss.fffzzz'); libraryPath=[string]$current.testCaseLibraryPath; stopRequested=$false; started=$started}
         Write-JsonFile (Get-RunPath $runID) $run; Start-BackgroundRun $runID
         return (Serialize-Run $run)
+    }
+    if ($Operation -match '^test-runs/(TR-[0-9]+)$' -and $Method -eq 'DELETE') {
+        $runID = $matches[1]; $path = Get-RunPath $runID
+        $marker = [IO.Path]::ChangeExtension($path, '.deleted')
+        if (-not (Test-Path -LiteralPath $marker)) {
+            $run = Read-JsonFile $path $null
+            if (-not $run) { throw 'Test run was not found.' }
+            if ((Serialize-Run $run).status -eq 'Running') { throw 'Close the running test run before deleting it.' }
+            # Preserve cancellation state and keep late runner writes hidden.
+            Write-JsonFile $marker ([ordered]@{id=$runID})
+        }
+        return [ordered]@{deleted=$true; id=$runID}
     }
     if ($Operation -match '^test-runs/(TR-[0-9]+)/close$') { return (Stop-Run $matches[1]) }
     if ($Operation -match '^test-runs/(TR-[0-9]+)/reports/([^/]+)/open$' -and $Method -eq 'POST') {

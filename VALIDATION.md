@@ -1,32 +1,27 @@
-# Validation — 18 September 2026 (v0.2.47)
+# Validation — 18 September 2026 (v0.2.48)
 
 Passed:
 
-- Server Go tests with the race detector and Go vet; Client Go tests and Go vet.
-- Linux amd64 Server and Windows amd64 Client builds (Client remains 0.7.17).
-- PowerShell 7 and Python worker regression tests: mixed Passed/Failed/Blocked
-  cases leave the task Completed; cancellation remains Interrupted; live polling
-  remains Running; case totals and results remain independent.
-- Report regression tests select the final same-line 检测报告 marker, produce a
-  local file URI, recover references from historical console output, open paths
-  containing Chinese characters and spaces, and reject non-HTML targets.
-- Python app and mirrored app tests, Python compilation, JavaScript syntax,
-  browser launch/API routing tests, and deployment health-check test.
-- Chrome at http://localhost:54321: Completed, Running and Interrupted task
-  labels appear independently from failed/blocked case counts. The status filter
-  contains only Running, Ready, Interrupted and Completed. Connection buttons
-  and the download acknowledgement button both use rgb(92, 108, 255).
+- Full Server Go tests with the race detector, Client Go tests, and both Go vet checks.
+- PowerShell 7 and Python deletion regressions: Pending/Running rejection, deletion
+  after interruption, Completed/Failed/Blocked records, idempotent retry, preserved
+  reports, and exclusion after a late background write. Strict DELETE path allowlist, authenticated proxy forwarding, and rejection of
+  unauthenticated/cross-origin deletion.
+- Existing connection/auth/IP isolation, settings, test execution, cancellation,
+  report, log and case-result regressions included in the full Server/Client suites.
+- Chrome UI with fixture API: confirmation, cancel without mutation, successful
+  deletion, running-task warning, refresh persistence, and no browser page errors.
+- Linux amd64 Server and Windows amd64 Client cross-builds.
+- Browser launch/API routing in five deployment layouts; JavaScript syntax.
+- Both Python app suites (7 tests); deployment suite health check (8 Ubuntu-only
+  installer tests skipped on macOS).
 
-Limits:
+Deployment: update Ubuntu Server only; web assets and management workers are
+embedded. Client 0.7.17 and companion executables are unchanged. No dependency
+or database migration. D: data migration is only needed when upgrading from
+versions older than v0.2.47.
 
-- A real Windows desktop, Windows PowerShell 5.1, D: volume, physical device and
-  private-network deployment are unavailable here. Local report launching is
-  tested with a mocked OS opener; native Windows browser launch needs an intranet
-  smoke test after deployment.
-- Eight Ubuntu-only installer checks are skipped on macOS. Installer unchanged.
-- Windows now defaults to D:\.idata. Existing C: data is preserved, but copying
-  historical records/settings is an explicit deployment step described in
-  LINUX_SERVER_DEPLOY.md. Historical absolute report paths retain their location.
-
-No dependencies were added. The local server remains available at
-http://localhost:54321 for manual inspection; temporary UI fixture disconnected.
+Limits: Chrome uses a fixture API, not physical devices. A real Windows desktop,
+PowerShell 5.1 and private-network deployment were unavailable; validate one
+real task and report locally after deployment. Deletion hides history using a
+durable marker; it deliberately retains local reports, logs and internal records.

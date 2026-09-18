@@ -110,3 +110,10 @@ and the immutable startedAt timestamp; the web list sorts newest first.
 
 Client 0.7.17 makes the server address read-only on direct executable launch.
 Browser launch and forwarding to a running client retain their endpoint behavior.
+
+The authenticated IDATA API accepts DELETE test-runs/TR-<digits> to remove a
+non-running task from history on the selected PC. Running tasks must be closed
+first. Deletion is idempotent and uses a durable .deleted marker beside the run
+record, preserving cancellation state during late background writes. Lists omit
+marked runs. Local logs and reports are retained. The generic Client protocol
+and Client version are unchanged.

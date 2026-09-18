@@ -32,8 +32,9 @@ type idataWorkerResponse struct {
 }
 
 var (
-	idataReadOperation  = regexp.MustCompile(`^(devices|settings|test-cases|test-cases/update|test-runs|test-runs/TR-[0-9]+/(reports|logs)/[A-Za-z0-9._%-]+/content)$`)
-	idataWriteOperation = regexp.MustCompile(`^(test-cases/update|test-runs|test-runs/TR-[0-9]+/close|test-runs/TR-[0-9]+/reports/[A-Za-z0-9._%-]+/open)$`)
+	idataReadOperation   = regexp.MustCompile(`^(devices|settings|test-cases|test-cases/update|test-runs|test-runs/TR-[0-9]+/(reports|logs)/[A-Za-z0-9._%-]+/content)$`)
+	idataDeleteOperation = regexp.MustCompile(`^test-runs/TR-[0-9]+$`)
+	idataWriteOperation  = regexp.MustCompile(`^(test-cases/update|test-runs|test-runs/TR-[0-9]+/close|test-runs/TR-[0-9]+/reports/[A-Za-z0-9._%-]+/open)$`)
 )
 
 func (s *Server) registerIDATA(mux *http.ServeMux) {
@@ -73,7 +74,7 @@ func (s *Server) registerIDATA(mux *http.ServeMux) {
 		}
 		files.ServeHTTP(w, r)
 	})
-	for _, method := range []string{"GET", "POST", "PUT"} {
+	for _, method := range []string{"GET", "POST", "PUT", "DELETE"} {
 		mux.HandleFunc(method+" /api/v1/clients/{client_id}/idata/{operation...}", s.handleIDATA)
 	}
 }
@@ -122,7 +123,8 @@ func (s *Server) handleIDATA(w http.ResponseWriter, r *http.Request) {
 	operation := r.PathValue("operation")
 	validOperation := r.Method == http.MethodGet && idataReadOperation.MatchString(operation) ||
 		r.Method == http.MethodPost && idataWriteOperation.MatchString(operation) ||
-		r.Method == http.MethodPut && operation == "settings"
+		r.Method == http.MethodPut && operation == "settings" ||
+		r.Method == http.MethodDelete && idataDeleteOperation.MatchString(operation)
 	if !validOperation {
 		writeError(w, 400, "Invalid IDATA operation.")
 		return
