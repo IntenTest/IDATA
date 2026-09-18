@@ -283,6 +283,7 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Task details": "任务详情",
   "Select a task to inspect its scope and delivery details.": "选择任务以查看其范围和交付详情。",
   "Project": "项目",
+  "Started at": "启动时间",
   "Updated": "更新时间",
   "Deliverables": "交付内容",
   "Activity report": "活动报告",
@@ -369,7 +370,7 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "QA staging · build 2.4.0-rc.3": "QA 预发布环境 · 构建 2.4.0-rc.3",
   "QA staging · build 2.4.0-rc.2": "QA 预发布环境 · 构建 2.4.0-rc.2",
   "Completed without blocking issues.": "已完成，无阻塞问题。",
-  "One blocked case requires a restored test account before execution can continue.": "一个受阻用例需要恢复测试账户后才能继续执行。",
+  "No final success or failure marker was found for one or more cases.": "部分用例未检测到最终成功或失败标记，请查看控制台输出。",
   "No failures recorded": "未记录失败",
   "Review the recorded failures before closing this run.": "关闭此次运行前，请审查已记录的失败项。",
   "Test run details": "测试任务详情",
@@ -993,7 +994,7 @@ const App = {
         const matchesStatus =
           !testRunStatusFilter.value || run.status === testRunStatusFilter.value;
         return matchesSearch && matchesStatus;
-      });
+      }).sort((a, b) => (Date.parse(b.startedAt) || 0) - (Date.parse(a.startedAt) || 0) || b.id.localeCompare(a.id, undefined, { numeric: true }));
     });
     const paginatedTestRuns = computed(() => {
       const start = (testRunCurrentPage.value - 1) * testRunPageSize.value;
@@ -1611,25 +1612,13 @@ const App = {
     }
 
     async function openTestReport(testCase) {
-      const reportWindow = window.open("about:blank", "_blank");
       try {
         const runId = encodeURIComponent(selectedTestRunId.value);
         const caseId = encodeURIComponent(testCase.testCase);
-        const response = await window.idataFetch(`/api/test-runs/${runId}/reports/${caseId}/content`);
-        if (!response.ok) throw new Error("Unable to load the report.");
-        const url = URL.createObjectURL(new Blob([await response.text()], {type: "text/html"}));
-        // Render local report content inside a sandbox, including when delivered as a blob.
-        if (reportWindow) {
-          const frame = reportWindow.document.createElement("iframe");
-          frame.setAttribute("sandbox", "");
-          frame.style.cssText = "position:fixed;inset:0;width:100%;height:100%;border:0";
-          frame.src = url;
-          reportWindow.document.body.appendChild(frame);
-          reportWindow.opener = null;
-        } else { URL.revokeObjectURL(url); throw new Error("Allow pop-ups to view reports."); }
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        const response = await window.idataFetch(`/api/test-runs/${runId}/reports/${caseId}/open`, { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Unable to open the report.");
       } catch (error) {
-        if (reportWindow) reportWindow.close();
         ElementPlus.ElMessage({message: error.message, type: "error"});
       }
     }
@@ -2022,7 +2011,8 @@ const App = {
         executedCases: run.executedProcesses || 0,
         passed: run.passedProcesses || 0,
         failed: run.failedProcesses || 0,
-        blocked: 0,
+        blocked: run.blockedProcesses || 0,
+        startedAt: run.startedAt || "",
         progress: run.progress || 0,
         duration: finished ? "Finished" : "Running",
         updated: finished ? "Just now" : "Now",
@@ -2541,8 +2531,8 @@ const App = {
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column :label="t('Updated')" width="105">
-                <template #default="{ row }">{{ displayValue(row.updated) }}</template>
+              <el-table-column :label="t('Started at')" width="185">
+                <template #default="{ row }">{{ row.startedAt ? new Date(row.startedAt).toLocaleString(isChinese ? 'zh-CN' : 'en-GB', { hour12: false }) : '—' }}</template>
               </el-table-column>
               <el-table-column :label="t('Actions')" width="90" fixed="right">
                 <template #default="{ row }">
@@ -2653,6 +2643,10 @@ const App = {
                   <span>{{ t('Failed') }}</span>
                   <strong>{{ selectedTestRun.failed }}</strong>
                 </div>
+                <div class="result-blocked">
+                  <span>{{ t('Blocked') }}</span>
+                  <strong>{{ selectedTestRun.blocked }}</strong>
+                </div>
                 <div class="result-running">
                   <span>{{ t('Running') }}</span>
                   <strong>{{ selectedTestRun.totalCases - selectedTestRun.executedCases }}</strong>
@@ -2664,7 +2658,7 @@ const App = {
                   : selectedTestRun.status === 'Interrupted'
                   ? 'The test execution was interrupted before completion.'
                   : selectedTestRun.status === 'Blocked'
-                  ? 'One blocked case requires a restored test account before execution can continue.'
+                  ? 'No final success or failure marker was found for one or more cases.'
                   : selectedTestRun.failed || selectedTestRun.blocked
                     ? 'Review the recorded failures before closing this run.'
                     : 'Completed without blocking issues.') }}
@@ -2699,7 +2693,7 @@ const App = {
                           ? 'danger'
                           : testCase.result === 'Interrupted'
                             ? 'danger'
-                          : testCase.result === 'Running'
+                          : ['Running', 'Blocked'].includes(testCase.result)
                             ? 'warning'
                             : 'info'"
                       effect="light"

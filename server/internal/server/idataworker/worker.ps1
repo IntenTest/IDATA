@@ -189,9 +189,23 @@ function Get-RunPath([string]$RunID) {
     return (Join-Path $runs ($RunID + '.json'))
 }
 
+function Get-CaseResult([string]$Output, [string]$CaseName) {
+    if ([string]::IsNullOrWhiteSpace($CaseName)) { return 'Blocked' }
+    # Match only this case; the last explicit completion marker is authoritative.
+    $pattern = '用例\s*' + [regex]::Escape($CaseName.Trim()) + '\s*执行(成功|失败)'
+    $markers = [regex]::Matches($Output, $pattern)
+    if ($markers.Count -eq 0) { return 'Blocked' }
+    if ($markers[$markers.Count - 1].Groups[1].Value -eq '成功') { return 'Passed' }
+    return 'Failed'
+}
+
 function Serialize-Run($Run) {
     # Refresh only the response snapshot; the runner remains the sole state writer.
     foreach ($item in @($Run.started)) {
+        $name = if ($item.executionName) { [string]$item.executionName } else { [string]$item.testCaseName }
+        if ($item.result -in @('Passed', 'Failed', 'Blocked') -and $name) {
+            Set-ObjectValue $item 'result' (Get-CaseResult ([string]$item.consoleOutput) $name)
+        }
         if ($item.result -eq 'Running' -and $item.logPath) {
             try {
                 $output = Read-LogText ([string]$item.logPath)
@@ -203,14 +217,15 @@ function Serialize-Run($Run) {
     }
     $started = @($Run.started); $finished = @($started | Where-Object { $_.result -notin @('Pending','Running') })
     $failed = @($finished | Where-Object result -eq 'Failed').Count
+    $blocked = @($finished | Where-Object result -eq 'Blocked').Count
     $interrupted = @($finished | Where-Object result -eq 'Interrupted').Count
-    $status = if ($Run.stopRequested) {'Interrupted'} elseif ($finished.Count -lt $started.Count) {'Running'} elseif ($interrupted) {'Interrupted'} elseif ($failed) {'Failed'} else {'Completed'}
+    $status = if ($Run.stopRequested) {'Interrupted'} elseif ($finished.Count -lt $started.Count) {'Running'} elseif ($interrupted) {'Interrupted'} elseif ($failed) {'Failed'} elseif ($blocked) {'Blocked'} else {'Completed'}
     $passed = @($finished | Where-Object result -eq 'Passed').Count
     $progress = if ($started.Count) {[math]::Round($finished.Count/$started.Count*100)} else {0}
     return [ordered]@{
         id=$Run.id; title=$Run.title; device=$Run.device; inspectionMode=$Run.inspectionMode; startedAt=$Run.startedAt; status=$status
         runningProcesses=($started.Count-$finished.Count); totalProcesses=$started.Count; executedProcesses=$finished.Count
-        passedProcesses=$passed; failedProcesses=$failed; interruptedProcesses=$interrupted
+        passedProcesses=$passed; failedProcesses=$failed; blockedProcesses=$blocked; interruptedProcesses=$interrupted
         progress=$progress
         consoleOutput=(@($started | ForEach-Object {[string]$_.consoleOutput}) -join "`n`n"); started=$started
     }
@@ -303,7 +318,7 @@ function Execute-Run([string]$RunID) {
             $status = Read-JsonFile $statusPath ([pscustomobject]@{exitCode=-1; error='The test status file could not be read.'})
             $output = Read-LogText $logPath
             $code = $status.exitCode
-            $result = if ($code -eq 0) {'Passed'} else {'Failed'}
+            $result = Get-CaseResult $output ([string]$item.executionName)
             $latest = Read-JsonFile $path $null
             if ($status.interrupted -or $latest.stopRequested) { Set-ObjectValue $run 'stopRequested' $true; $result = 'Interrupted' }
             Set-ObjectValue $item 'result' $result
@@ -314,7 +329,8 @@ function Execute-Run([string]$RunID) {
             $failure = ($_ | Out-String).Trim()
             if (-not (Test-Path -LiteralPath $logPath)) { [IO.File]::WriteAllText($logPath, $failure + "`r`n", $Utf8) }
             else { [IO.File]::AppendAllText($logPath, "`r`n$failure`r`n", $Utf8) }
-            Set-ObjectValue $item 'result' 'Failed'; Set-ObjectValue $item 'exitCode' -1; Set-ObjectValue $item 'error' $failure; Set-ObjectValue $item 'consoleOutput' (Read-LogText $logPath)
+            $output = Read-LogText $logPath
+            Set-ObjectValue $item 'result' (Get-CaseResult $output ([string]$item.executionName)); Set-ObjectValue $item 'exitCode' -1; Set-ObjectValue $item 'error' $failure; Set-ObjectValue $item 'consoleOutput' $output
         }
         Write-JsonFile $path $run
     }
@@ -425,11 +441,23 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
             $case = $available[[string]$caseID]
             $started += [ordered]@{testCase=[string]$caseID; testCaseName=$case.executionName; executionName=$case.executionName; inspectionMode=$mode; processId=$null; command="$idata cli bundle run --path $runner -- $($case.executionName) $mode $device"; result='Pending'; consoleOutput=''; exitCode=$null; reportUrl=$null; reportLocation=$null; checks=@()}
         }
-        $run = [ordered]@{id=$runID; title=[string]$Body.name; device=$device; inspectionMode=$mode; startedAt=[DateTimeOffset]::Now.ToString('yyyy-MM-ddTHH:mm:sszzz'); libraryPath=[string]$current.testCaseLibraryPath; stopRequested=$false; started=$started}
+        $run = [ordered]@{id=$runID; title=[string]$Body.name; device=$device; inspectionMode=$mode; startedAt=[DateTimeOffset]::Now.ToString('yyyy-MM-ddTHH:mm:ss.fffzzz'); libraryPath=[string]$current.testCaseLibraryPath; stopRequested=$false; started=$started}
         Write-JsonFile (Get-RunPath $runID) $run; Start-BackgroundRun $runID
         return (Serialize-Run $run)
     }
     if ($Operation -match '^test-runs/(TR-[0-9]+)/close$') { return (Stop-Run $matches[1]) }
+    if ($Operation -match '^test-runs/(TR-[0-9]+)/reports/([^/]+)/open$' -and $Method -eq 'POST') {
+        $run = Read-JsonFile (Get-RunPath $matches[1]) $null
+        $caseID = $matches[2]
+        $item = @($run.started | Where-Object {[string]$_.testCase -eq $caseID}) | Select-Object -First 1
+        if (-not $item -or [string]::IsNullOrWhiteSpace([string]$item.reportLocation)) { throw 'Test report was not found.' }
+        $path = [string]$item.reportLocation
+        if (-not [IO.Path]::IsPathRooted($path)) { $path = Join-Path ([string]$run.libraryPath) $path }
+        $file = Get-Item -LiteralPath $path -ErrorAction Stop
+        if ($file.PSIsContainer -or $file.Extension -notin @('.html', '.htm') -or $file.FullName.StartsWith('\\')) { throw 'Only local HTML reports can be opened.' }
+        Start-Process -FilePath $file.FullName -ErrorAction Stop | Out-Null
+        return [ordered]@{reportUrl=([uri]::new($file.FullName, [UriKind]::Absolute)).AbsoluteUri}
+    }
     if ($Operation -match '^test-runs/(TR-[0-9]+)/reports/([^/]+)/content$') {
         $run=Read-JsonFile (Get-RunPath $matches[1]) $null; $caseID=$matches[2]; $item=@($run.started | Where-Object {[string]$_.testCase -eq $caseID})[0]
         if (-not $item -or -not (Test-Path -LiteralPath ([string]$item.reportLocation) -PathType Leaf)) { throw 'Test report was not found.' }

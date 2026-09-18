@@ -1,30 +1,36 @@
-# IDATA Linux 服务器重新部署（v0.2.45）
+# IDATA Linux 服务器重新部署（v0.2.46）
 
 本文用于在 Ubuntu x86-64 服务器上首次安装或升级 IDATA Server。
 重新部署会保留现有的监听地址、Token 和已批准的设备凭据。
+
+本次升级需要同时更新 Ubuntu Server（0.2.46）和 Windows Client（0.7.17）。
+网页和执行脚本已嵌入 Server，无需单独拷贝网页或清除 PC 上的任务记录。
+内网下载页也应替换为本次的 IDATA-Client.exe；保留现有 IDATA.exe 等配套程序。
+更新 Windows Client 前退出旧客户端，用新文件覆盖同目录中的 IDATA-Client.exe，
+双击运行一次，再从网站启动连接。Nginx、Token 和已有地址配置无需调整。
 
 ## 1. 需要下载的文件
 
 推荐只下载以下两个文件：
 
-1. [`IDATA-ubuntu-v0.2.45.tar.gz`](https://github.com/IntenTest/IDATA/releases/download/v0.2.45/IDATA-ubuntu-v0.2.45.tar.gz)
+1. [`IDATA-ubuntu-v0.2.46.tar.gz`](https://github.com/IntenTest/IDATA/releases/download/v0.2.46/IDATA-ubuntu-v0.2.46.tar.gz)
    —— Ubuntu 完整部署包，内含 Linux Server、部署脚本、本文档和包内校验文件。
-2. [`SHA256SUMS`](https://github.com/IntenTest/IDATA/releases/download/v0.2.45/SHA256SUMS)
+2. [`SHA256SUMS`](https://github.com/IntenTest/IDATA/releases/download/v0.2.46/SHA256SUMS)
    ——用于校验下载的 `.tar.gz` 是否完整。
 
 Linux 服务器不需要下载 `IDATA-Client.exe`；该文件只用于
 Windows 执行电脑。Windows 用户应从同一 Release 下载
-[`IDATA-Client.exe`](https://github.com/IntenTest/IDATA/releases/download/v0.2.45/IDATA-Client.exe)。
+[`IDATA-Client.exe`](https://github.com/IntenTest/IDATA/releases/download/v0.2.46/IDATA-Client.exe)。
 
 如果 Ubuntu 服务器可以访问 GitHub，直接执行：
 
 ```bash
-mkdir -p "$HOME/idata-release-v0.2.45"
-cd "$HOME/idata-release-v0.2.45"
+mkdir -p "$HOME/idata-release-v0.2.46"
+cd "$HOME/idata-release-v0.2.46"
 curl --fail --location --remote-name \
-  https://github.com/IntenTest/IDATA/releases/download/v0.2.45/IDATA-ubuntu-v0.2.45.tar.gz
+  https://github.com/IntenTest/IDATA/releases/download/v0.2.46/IDATA-ubuntu-v0.2.46.tar.gz
 curl --fail --location --remote-name \
-  https://github.com/IntenTest/IDATA/releases/download/v0.2.45/SHA256SUMS
+  https://github.com/IntenTest/IDATA/releases/download/v0.2.46/SHA256SUMS
 ```
 
 如果服务器不能访问 GitHub，先在可联网电脑上下载上述两个文件，再通过
@@ -35,9 +41,9 @@ SCP、SFTP 或内网文件传输工具将它们放到 Ubuntu 服务器的同一�
 进入两个下载文件所在的目录，执行：
 
 ```bash
-grep ' IDATA-ubuntu-v0.2.45.tar.gz$' SHA256SUMS | sha256sum --check -
-tar -xzf IDATA-ubuntu-v0.2.45.tar.gz
-cd IDATA-ubuntu-v0.2.45
+grep ' IDATA-ubuntu-v0.2.46.tar.gz$' SHA256SUMS | sha256sum --check -
+tar -xzf IDATA-ubuntu-v0.2.46.tar.gz
+cd IDATA-ubuntu-v0.2.46
 sha256sum --check SHA256SUMS
 ```
 
@@ -80,7 +86,7 @@ curl --fail --silent --show-error http://127.0.0.1:12345/healthz
 默认端口的健康检查应返回：
 
 ```json
-{"status":"ok","version":"0.2.45"}
+{"status":"ok","version":"0.2.46"}
 ```
 
 如果原服务使用的不是 `12345` 端口，请将命令中的端口替换为

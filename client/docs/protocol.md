@@ -13,7 +13,7 @@ Allowed operations:
 - GET /api/devices, /api/settings, /api/test-cases, /api/test-runs
 - POST /api/test-runs
 - POST /api/test-runs/{run}/close
-- POST /api/test-runs/{run}/reports/{case}/open (legacy local report opening)
+- POST /api/test-runs/{run}/reports/{case}/open (open the HTML report on the execution PC)
 - GET /api/test-runs/{run}/reports/{case}/content (remote report viewing)
 - PUT /api/settings
 
@@ -40,8 +40,7 @@ The server exposes these operations at
 an administrator bearer token or a device/IP browser session authorized for that PC.
 Browser IP sessions are scoped to the unique Client at the same effective PC
 IP. Explicitly configured proxies supply X-Real-IP; other peers use their socket
-address. All HTTP/WebSocket handlers apply the same PC scope. HTML reports are
-sandboxed and cannot run scripts against the control origin.
+address. All HTTP/WebSocket handlers apply the same PC scope. The report content endpoint remains sandboxed. The web report action uses an authenticated POST to open the persisted local HTML file in the execution PC’s default browser; relative images resolve from that file’s directory. Only existing .html/.htm files can be opened, and requests cannot supply a file path.
 
 Test case archives: POST /api/test-cases/update starts or rejoins a background update;
 GET /api/test-cases/update returns idle/running/complete/failed and a message.
@@ -65,3 +64,13 @@ Omitting it retains `/ws/agent` for older root deployments. Unknown or duplicate
 parameters, credentials, queries within the destination, and fragments are
 rejected. Launch endpoints are preserved through running-client handoff and
 subsequent enrollment/polling. Page query strings and fragments are not included.
+
+Completed cases are classified by the last `用例<executionName>执行成功` or
+`用例<executionName>执行失败` marker in that case's console output. Names are matched
+literally. Missing markers produce `Blocked`, regardless of process exit code;
+exit codes remain diagnostic data. Pending/running cases are not classified early,
+and explicit cancellation retains Interrupted. Responses include blockedProcesses
+and the immutable startedAt timestamp; the web list sorts newest first.
+
+Client 0.7.17 makes the server address read-only on direct executable launch.
+Browser launch and forwarding to a running client retain their endpoint behavior.

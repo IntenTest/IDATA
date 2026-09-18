@@ -84,7 +84,7 @@ func TestTwoPCsBehindNginxRouteOnlyToTheirOwnClient(t *testing.T) {
 				}
 				call := computer.calls.Add(1)
 				result := fmt.Sprintf(`{"ok":true,"data":{"pc":%q}}`, computer.id)
-				if call%3 == 0 {
+				if call%4 == 0 {
 					result = fmt.Sprintf(`{"ok":true,"data":{"contentBase64":%q}}`, base64.StdEncoding.EncodeToString([]byte(computer.id)))
 				}
 				if err := computer.socket.WriteJSON(protocol.Message{Type: protocol.TypeResult, ProtocolVersion: protocol.Version, RequestID: message.RequestID, ExitCode: 0, Stdout: result}); err != nil {
@@ -118,7 +118,7 @@ func TestTwoPCsBehindNginxRouteOnlyToTheirOwnClient(t *testing.T) {
 		if resp.StatusCode != 200 || len(self.Clients) != 1 || self.Clients[0].ID != computer.id || self.Clients[0].RemoteAddress != "" {
 			t.Fatalf("%s saw incorrect devices: %s", computer.id, data)
 		}
-		for _, operation := range []struct{ method, path string }{{"GET", "devices"}, {"POST", "test-runs"}, {"GET", "test-runs/TR-1/reports/1/content"}} {
+		for _, operation := range []struct{ method, path string }{{"GET", "devices"}, {"POST", "test-runs"}, {"POST", "test-runs/TR-1/reports/1/open"}, {"GET", "test-runs/TR-1/reports/1/content"}} {
 			resp, data = request(computer, operation.method, "/api/v1/clients/"+computer.id+"/idata/"+operation.path)
 			if resp.StatusCode != 200 || !strings.Contains(string(data), computer.id) {
 				t.Fatalf("%s operation %s routed incorrectly: status=%d body=%s", computer.id, operation.path, resp.StatusCode, data)
@@ -145,7 +145,7 @@ func TestTwoPCsBehindNginxRouteOnlyToTheirOwnClient(t *testing.T) {
 		}
 	}
 	for _, computer := range computers {
-		if computer.calls.Load() != 3 {
+		if computer.calls.Load() != 4 {
 			t.Fatalf("%s handled unexpected operations: %d", computer.id, computer.calls.Load())
 		}
 	}

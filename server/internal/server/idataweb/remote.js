@@ -6,6 +6,7 @@
   const params = new URLSearchParams(location.search);
   const connection = Vue.reactive({
     visible: false,
+    downloadVisible: false,
     message: "Looking for the IDATA Client…",
     language: localStorage.getItem("idata-language") === "en" ? "en" : "zh-CN",
     browserIP: "",
@@ -17,10 +18,13 @@
   "Multiple Clients use this PC address. Keep one Client running on this PC.": "检测到同一台 PC 地址有多个客户端，请只保留一个客户端运行。",
   "The configured proxy must supply one valid X-Real-IP value.": "服务器代理未正确传递本机 IP，请检查代理配置。",
   "The reverse proxy is not trusted. Device matching was blocked to prevent cross-PC access.": "服务器尚未信任当前反向代理。为防止访问到其他电脑，已停止设备匹配。请将代理 IP 加入 IDATA_TRUSTED_PROXIES。",
+  "First-time setup": "首次使用须知",
+  "Download every .exe file from the latest release into the same folder. Double-click IDATA-Client.exe once to register the browser launcher, then return to this page and select Open IDATA Client. Keep all downloaded files together.": "首次使用时，请下载最新版本下的所有 .exe 文件，并将它们保存到同一文件夹。下载完成后，请先双击运行一次 IDATA-Client.exe，完成浏览器启动方式的注册，再返回本页点击“已下载，启动客户端”。请勿将这些文件分开放置。",
+  "Understood — open the IDATA download page": "已知晓，前往 IDATA 华为内源下载页",
   "Connect IDATA Client": "连接 IDATA 客户端",
-  "Open IDATA Client": "启动 IDATA 客户端",
-  "Client started — refresh connection": "已启动客户端，刷新连接",
-  "Download IDATA Client": "下载IDATA Client客户端",
+  "Open IDATA Client": "已下载，启动客户端",
+  "Client started — refresh connection": "已启动客户端，刷新页面",
+  "Download IDATA Client": "新用户，下载客户端",
   "Open IDATA Client on this computer to access devices and run tests. This page will refresh automatically when the client connects.": "请启动本机的 IDATA 客户端，以访问设备并运行测试。检测到接入后，页面将自动刷新。",
   "Looking for the IDATA Client…": "正在检测 IDATA 客户端接入状态…",
   "IDATA Client is not connected. Open it to continue.": "尚未检测到 IDATA 客户端接入，请点击下方按钮启动客户端。",
@@ -50,7 +54,7 @@
 
   Vue.createApp({
     setup() {
-      return { connection, openWindowsClient, openIDATAClientDownload, refreshConnection, t };
+      return { connection, openWindowsClient, openIDATAClientDownload, confirmIDATAClientDownload, refreshConnection, t };
     },
     template: `
       <el-dialog
@@ -94,10 +98,16 @@
         </div>
         <template #footer>
           <div class="remote-connection-actions">
-            <el-button @click="refreshConnection">{{ t('Client started — refresh connection') }}</el-button>
-            <el-button @click="openIDATAClientDownload">{{ t('Download IDATA Client') }}</el-button>
+            <el-button type="primary" @click="openIDATAClientDownload">{{ t('Download IDATA Client') }}</el-button>
             <el-button type="primary" @click="openWindowsClient">{{ t('Open IDATA Client') }}</el-button>
+            <el-button type="primary" @click="refreshConnection">{{ t('Client started — refresh connection') }}</el-button>
           </div>
+        </template>
+      </el-dialog>
+      <el-dialog v-model="connection.downloadVisible" :title="t('First-time setup')" width="560px" align-center class="remote-connection-dialog">
+        <p class="remote-connection-description">{{ t('Download every .exe file from the latest release into the same folder. Double-click IDATA-Client.exe once to register the browser launcher, then return to this page and select Open IDATA Client. Keep all downloaded files together.') }}</p>
+        <template #footer>
+          <el-button type="primary" @click="confirmIDATAClientDownload">{{ t('Understood — open the IDATA download page') }}</el-button>
         </template>
       </el-dialog>
     `,
@@ -208,7 +218,12 @@
   }
 
   function openIDATAClientDownload() {
-    window.open("https://openx.huawei.com/IDATA/download", "_blank", "noopener,noreferrer");
+    connection.downloadVisible = true;
+  }
+
+  function confirmIDATAClientDownload() {
+    window.open("https://openx.huawei.com/IDATA/download", "_blank", "popup=yes,width=1200,height=850,noopener,noreferrer");
+    connection.downloadVisible = false;
   }
 
   window.idataFetch = async (path, options = {}) => {

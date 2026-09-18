@@ -148,7 +148,7 @@ func (ui *clientUI) createWindow(initial clientUIInitial) error {
 						TextColor: dark, MinSize: Size{Height: 30}},
 					VSpacer{Size: 4},
 					Label{Text: "服务器 URL、域名或 IP", TextColor: muted},
-					LineEdit{AssignTo: &ui.serverIP, Text: initial.ServerIP, CueBanner: "例如 http://server.example:8080/", MinSize: Size{Height: 30}},
+					LineEdit{AssignTo: &ui.serverIP, Text: initial.ServerIP, ReadOnly: !initial.AutoConnect, CueBanner: "例如 http://server.example:8080/", MinSize: Size{Height: 30}},
 					VSpacer{Size: 8},
 					Label{Text: "本机信息", Font: Font{Family: "Microsoft YaHei UI", PointSize: 9, Bold: true}, TextColor: dark},
 					Label{Text: "用户名    " + displayIdentityValue(initial.Username), TextColor: muted, MinSize: Size{Height: 22}},

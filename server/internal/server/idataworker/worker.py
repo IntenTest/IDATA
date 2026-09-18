@@ -186,12 +186,23 @@ def idata_path(current):
     return (directory / ("IDATA.exe" if raw.replace("\\", "/").lower() == "../idata.exe" else raw)).resolve()
 
 
+def case_result(output, case_name):
+    if not case_name or not case_name.strip():
+        return "Blocked"
+    markers = re.findall(r"用例\s*" + re.escape(case_name.strip()) + r"\s*执行(成功|失败)", output)
+    return "Blocked" if not markers else "Passed" if markers[-1] == "成功" else "Failed"
+
+
 def serialize_run(run):
-    processes = run["started"]
+    processes = [dict(item) for item in run["started"]]
+    for item in processes:
+        if item["result"] in {"Passed", "Failed", "Blocked"} and item.get("testCaseName"):
+            item["result"] = case_result(item.get("consoleOutput", ""), item["testCaseName"])
     finished = [item for item in processes if item["result"] not in {"Pending", "Running"}]
     failed = sum(item["result"] == "Failed" for item in finished)
+    blocked = sum(item["result"] == "Blocked" for item in finished)
     interrupted = sum(item["result"] == "Interrupted" for item in finished)
-    return {**run, "status": "Interrupted" if run.get("stopRequested") else "Running" if len(finished) < len(processes) else "Interrupted" if interrupted else "Failed" if failed else "Completed", "runningProcesses": len(processes) - len(finished), "totalProcesses": len(processes), "executedProcesses": len(finished), "passedProcesses": sum(item["result"] == "Passed" for item in finished), "failedProcesses": failed, "interruptedProcesses": interrupted, "progress": round(len(finished) / len(processes) * 100) if processes else 0, "consoleOutput": "\n\n".join(item.get("consoleOutput", "") for item in processes)}
+    return {**run, "started": processes, "status": "Interrupted" if run.get("stopRequested") else "Running" if len(finished) < len(processes) else "Interrupted" if interrupted else "Failed" if failed else "Blocked" if blocked else "Completed", "runningProcesses": len(processes) - len(finished), "totalProcesses": len(processes), "executedProcesses": len(finished), "passedProcesses": sum(item["result"] == "Passed" for item in finished), "failedProcesses": failed, "blockedProcesses": blocked, "interruptedProcesses": interrupted, "progress": round(len(finished) / len(processes) * 100) if processes else 0, "consoleOutput": "\n\n".join(item.get("consoleOutput", "") for item in processes)}
 
 
 def run_path(run_id):
@@ -213,14 +224,18 @@ def execute_run(run_id):
         item["result"] = "Running"
         atomic_json(path, run)
         command = item.pop("executionCommand")
-        result = subprocess.run(command, cwd=run["libraryPath"], capture_output=True, text=True, errors="replace")
-        output = (result.stdout or "") + (result.stderr or "")
+        try:
+            result = subprocess.run(command, cwd=run["libraryPath"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
+            output, exit_code = result.stdout or "", result.returncode
+        except OSError as error:
+            output, exit_code = str(error), -1
+
         latest = json.loads(path.read_text(encoding="utf-8"))
         if latest.get("stopRequested"):
             run["stopRequested"] = True
             item.update(result="Interrupted", exitCode=None, interruptionMessage="The test run was closed manually.", consoleOutput=output)
         else:
-            item.update(result="Passed" if result.returncode == 0 else "Failed", exitCode=result.returncode, consoleOutput=output)
+            item.update(result=case_result(output, item["testCaseName"]), exitCode=exit_code, consoleOutput=output)
         match = re.search(r"(?:report|report path|报告路径)\s*[:：]\s*(.+?\.html?)", output, re.I)
         if match:
             item["reportLocation"] = match.group(1).strip().strip('"')
@@ -273,7 +288,7 @@ def handle(operation, method, body):
                 raise RuntimeError(f"Unknown test case selection: {case_id}")
             command = [str(executable), "cli", "bundle", "run", "--path", str(runner), "--", case["executionName"], str(mode), device]
             started.append({"testCase": case_id, "testCaseName": case["executionName"], "inspectionMode": mode, "processId": None, "command": subprocess.list2cmdline(command), "executionCommand": command, "result": "Pending", "consoleOutput": "", "exitCode": None, "reportUrl": None, "reportLocation": None, "checks": []})
-        run = {"id": run_id, "title": str(body.get("name", "")).strip(), "device": device, "inspectionMode": mode, "startedAt": datetime.now().astimezone().isoformat(timespec="seconds"), "libraryPath": str(root), "started": started}
+        run = {"id": run_id, "title": str(body.get("name", "")).strip(), "device": device, "inspectionMode": mode, "startedAt": datetime.now().astimezone().isoformat(timespec="milliseconds"), "libraryPath": str(root), "started": started}
         RUNS.mkdir(parents=True, exist_ok=True)
         atomic_json(run_path(run_id), run)
         worker = write_background_worker("run-worker.py", "run", run_id)
@@ -289,6 +304,23 @@ def handle(operation, method, body):
             if item["result"] in {"Pending", "Running"}:
                 item.update(result="Interrupted", exitCode=None, error="The test run was closed manually.", interruptionMessage="The test run was closed manually.")
         atomic_json(path, run); return serialize_run(run)
+    match = re.fullmatch(r"test-runs/(TR-[0-9]+)/reports/([^/]+)/open", operation)
+    if match and method == "POST":
+        run = json.loads(run_path(match.group(1)).read_text(encoding="utf-8"))
+        item = next((value for value in run["started"] if value["testCase"] == match.group(2)), None)
+        if not item or not item.get("reportLocation"):
+            raise RuntimeError("Test report was not found.")
+        report = Path(item["reportLocation"]).expanduser()
+        if not report.is_absolute():
+            report = Path(run["libraryPath"]) / report
+        report = report.resolve()
+        if not report.is_file() or report.suffix.lower() not in {".html", ".htm"}:
+            raise RuntimeError("Only local HTML reports can be opened.")
+        if sys.platform == "win32":
+            os.startfile(str(report))
+        else:
+            subprocess.run(["open" if sys.platform == "darwin" else "xdg-open", str(report)], check=True)
+        return {"reportUrl": report.as_uri()}
     match = re.fullmatch(r"test-runs/(TR-[0-9]+)/reports/([^/]+)/content", operation)
     if match:
         run = json.loads(run_path(match.group(1)).read_text(encoding="utf-8")); item = next((value for value in run["started"] if value["testCase"] == match.group(2)), None)

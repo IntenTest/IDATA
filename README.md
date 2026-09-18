@@ -149,3 +149,21 @@ Regression check: `python3 -m unittest discover -s idata/app -p 'test_*.py'`.
 ## Ubuntu Server 一键部署
 
 按 [部署指导](LINUX_SERVER_DEPLOY.md) 将 `deploy-ubuntu.sh`、Release 服务端二进制和 `SHA256SUMS` 拷到 Ubuntu 后执行脚本。支持首次安装和重复升级，默认端口 `12345`（升级保留已有监听配置），保留已有 Token 与设备凭据。
+
+### Task results and local reports
+
+The task list shows the recorded start time and sorts newest first. A completed
+case passes only when its last explicit `用例<case name>执行成功` marker is successful;
+`用例<case name>执行失败` means failure. Without either marker, the case is Blocked
+(yellow), even if its process exits with code zero. Historical completed cases
+are reclassified from their saved console output on read. Explicit cancellation
+remains Interrupted.
+
+The inspection report action asks the connected execution PC to open the saved
+local HTML file in its default browser, preserving relative image paths. It does
+not copy report HTML into an empty browser page.
+
+On first use, download every executable in the latest internal release to the
+same folder and run IDATA-Client.exe once before launching it from the website.
+Direct Client launch displays a read-only server address; browser launch continues
+to supply the website's endpoint.

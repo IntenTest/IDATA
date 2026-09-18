@@ -168,7 +168,7 @@ func TestIDATAWorkspaceIsTheOnlyEmbeddedWebPage(t *testing.T) {
 	}
 	remote := httptest.NewRecorder()
 	app.Handler().ServeHTTP(remote, httptest.NewRequest(http.MethodGet, "/remote.js", nil))
-	for _, label := range []string{"Open IDATA Client", "启动 IDATA 客户端", "Download IDATA Client", "下载IDATA Client客户端", "https://openx.huawei.com/IDATA/download", "Current web access IP", "Matched Client connection IP", "<el-dialog", "width=\"680px\"", "remote-connection-actions", ":close-on-click-modal=\"false\"", ":close-on-press-escape=\"false\"", ":show-close=\"false\""} {
+	for _, label := range []string{"Open IDATA Client", "启动 IDATA 客户端", "Download IDATA Client", "新用户，下载客户端", "https://openx.huawei.com/IDATA/download", "Current web access IP", "Matched Client connection IP", "<el-dialog", "width=\"680px\"", "remote-connection-actions", ":close-on-click-modal=\"false\"", ":close-on-press-escape=\"false\"", ":show-close=\"false\""} {
 		if !strings.Contains(remote.Body.String(), label) {
 			t.Fatalf("connection action %q was not served", label)
 		}
@@ -176,8 +176,8 @@ func TestIDATAWorkspaceIsTheOnlyEmbeddedWebPage(t *testing.T) {
 	if strings.Contains(remote.Body.String(), "[401, 403, 409, 502, 503]") {
 		t.Fatal("command failures still trigger the client disconnect/reload loop")
 	}
-	if !strings.Contains(response.Body.String(), "remote.js?v=20260916-wide-client-actions") ||
-		!strings.Contains(response.Body.String(), "styles.css?v=20260916-horizontal-client-actions") {
+	if !strings.Contains(response.Body.String(), "remote.js?v=20260918-client-onboarding") ||
+		!strings.Contains(response.Body.String(), "styles.css?v=20260918-run-results") {
 		t.Fatal("remote connection script cache was not invalidated")
 	}
 	if strings.Contains(response.Body.String(), "iData Console") {
