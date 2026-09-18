@@ -11,8 +11,9 @@ $ProgressPreference = 'SilentlyContinue'
 $Utf8 = New-Object System.Text.UTF8Encoding($false)
 [Console]::InputEncoding = $Utf8
 [Console]::OutputEncoding = $Utf8
-$State = Join-Path $env:USERPROFILE '.idata\server-command-runtime'
-$Library = Join-Path $env:USERPROFILE '.idata\newest_testcases'
+$DataRoot = if ($env:OS -eq 'Windows_NT') { 'D:\.idata' } else { Join-Path $env:USERPROFILE '.idata' }
+$State = Join-Path $DataRoot 'server-command-runtime'
+$Library = Join-Path $DataRoot 'newest_testcases'
 $SettingsPath = Join-Path $State 'settings.json'
 $UpdatePath = Join-Path $State 'test-case-update.json'
 [IO.Directory]::CreateDirectory($State) | Out-Null
@@ -199,6 +200,20 @@ function Get-CaseResult([string]$Output, [string]$CaseName) {
     return 'Failed'
 }
 
+function Set-ReportReference($Item, [string]$LibraryPath = '') {
+    $markers = [regex]::Matches([string]$Item.consoleOutput, '(?im)检测报告[ \t]*[:：][ \t]*([^\r\n]+)')
+    if ($markers.Count -eq 0) { return }
+    $path = $markers[$markers.Count - 1].Groups[1].Value.Trim().Trim([char]34, [char]39)
+    Set-ObjectValue $Item 'reportLocation' $path
+    Set-ObjectValue $Item 'reportUrl' $null
+    if ($path -match '^(?i)(https?://|file:|\\\\)' -or [IO.Path]::GetExtension($path) -notin @('.html', '.htm')) { return }
+    if (-not [IO.Path]::IsPathRooted($path) -and $path -notmatch '^[A-Za-z]:[\\/]') {
+        if (-not $LibraryPath) { return }
+        $path = [IO.Path]::GetFullPath((Join-Path $LibraryPath $path))
+    }
+    Set-ObjectValue $Item 'reportUrl' ([uri]::new($path, [UriKind]::Absolute)).AbsoluteUri
+}
+
 function Serialize-Run($Run) {
     # Refresh only the response snapshot; the runner remains the sole state writer.
     foreach ($item in @($Run.started)) {
@@ -215,11 +230,12 @@ function Serialize-Run($Run) {
             }
         }
     }
+    foreach ($item in @($Run.started)) { Set-ReportReference $item ([string]$Run.libraryPath) }
     $started = @($Run.started); $finished = @($started | Where-Object { $_.result -notin @('Pending','Running') })
     $failed = @($finished | Where-Object result -eq 'Failed').Count
     $blocked = @($finished | Where-Object result -eq 'Blocked').Count
     $interrupted = @($finished | Where-Object result -eq 'Interrupted').Count
-    $status = if ($Run.stopRequested) {'Interrupted'} elseif ($finished.Count -lt $started.Count) {'Running'} elseif ($interrupted) {'Interrupted'} elseif ($failed) {'Failed'} elseif ($blocked) {'Blocked'} else {'Completed'}
+    $status = if ($Run.stopRequested) {'Interrupted'} elseif ($finished.Count -lt $started.Count) {'Running'} elseif ($interrupted) {'Interrupted'} else {'Completed'}
     $passed = @($finished | Where-Object result -eq 'Passed').Count
     $progress = if ($started.Count) {[math]::Round($finished.Count/$started.Count*100)} else {0}
     return [ordered]@{
@@ -324,7 +340,7 @@ function Execute-Run([string]$RunID) {
             Set-ObjectValue $item 'result' $result
             Set-ObjectValue $item 'exitCode' $code; Set-ObjectValue $item 'consoleOutput' $output
             if ($status.error) { Set-ObjectValue $item 'error' ([string]$status.error) }
-            if ($output -match '(?im)(?:report|report path|报告路径)\s*[:：]\s*(.+?\.html?)\s*$') { Set-ObjectValue $item 'reportLocation' $matches[1].Trim().Trim('"'); Set-ObjectValue $item 'reportUrl' 'available' }
+            Set-ReportReference $item ([string]$run.libraryPath)
         } catch {
             $failure = ($_ | Out-String).Trim()
             if (-not (Test-Path -LiteralPath $logPath)) { [IO.File]::WriteAllText($logPath, $failure + "`r`n", $Utf8) }
@@ -450,6 +466,7 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
         $run = Read-JsonFile (Get-RunPath $matches[1]) $null
         $caseID = $matches[2]
         $item = @($run.started | Where-Object {[string]$_.testCase -eq $caseID}) | Select-Object -First 1
+        if ($item) { Set-ReportReference $item ([string]$Run.libraryPath) }
         if (-not $item -or [string]::IsNullOrWhiteSpace([string]$item.reportLocation)) { throw 'Test report was not found.' }
         $path = [string]$item.reportLocation
         if (-not [IO.Path]::IsPathRooted($path)) { $path = Join-Path ([string]$run.libraryPath) $path }

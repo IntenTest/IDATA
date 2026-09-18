@@ -41,11 +41,18 @@ $historical = [pscustomobject]@{started=@([pscustomobject]@{result='Passed'; tes
 if ((Serialize-Run $historical).blockedProcesses -ne 1) { throw 'Historical exit-code result was not reclassified' }
 $historical.started[0].result = 'Interrupted'
 if ((Serialize-Run $historical).status -ne 'Interrupted') { throw 'Explicit cancellation was overwritten' }
+$reportItem = [pscustomobject]@{consoleOutput=('检测报告：C:/old.html' + [Environment]::NewLine + '检测报告：D:/报告 空格.html')}
+Set-ReportReference $reportItem
+if ($reportItem.reportLocation -ne 'D:/报告 空格.html' -or $reportItem.reportUrl -notlike 'file:///D:/*') { throw 'Final inspection report path not selected' }
+$reportItem = [pscustomobject]@{consoleOutput=('检测报告：' + [Environment]::NewLine + 'D:/wrong.html')}
+Set-ReportReference $reportItem
+if ($reportItem.reportLocation) { throw 'Report path must remain on the same line' }
 $summary = Serialize-Run $run
+if ($summary.status -ne 'Completed') { throw 'Mixed case results changed task status' }
 if ($summary.passedProcesses -ne 1 -or $summary.failedProcesses -ne 1 -or $summary.blockedProcesses -ne 1 -or $summary.progress -ne 100) { throw 'Wrong summary' }
 $run.started = @($run.started[2])
-if ((Serialize-Run $run).status -ne 'Blocked') { throw 'Blocked run reported completed' }
-$run.started = @([pscustomobject]@{testCase='1'; result='Passed'; reportLocation='报告 空格.html'})
+if ((Serialize-Run $run).status -ne 'Completed') { throw 'Case result changed task status' }
+$run.started = @([pscustomobject]@{testCase='1'; result='Passed'; reportLocation='wrong.html'; consoleOutput='检测报告：报告 空格.html'})
 Write-JsonFile (Get-RunPath 'TR-1') $run
 $report = Join-Path $State '报告 空格.html'
 [IO.File]::WriteAllText($report, '<img src="assets/image.png">', $Utf8)
@@ -53,6 +60,7 @@ function Start-Process { param($FilePath, $ErrorAction) $script:opened = $FilePa
 $response = Handle-Request 'test-runs/TR-1/reports/1/open' 'POST' ([pscustomobject]@{})
 if ($script:opened -ne $report -or $response.reportUrl -notlike 'file:*') { throw ("Report location mismatch: opened=" + $script:opened + "; expected=" + $report + "; uri=" + $response.reportUrl) }
 $run.started[0].reportLocation = 'unsafe.exe'
+$run.started[0].consoleOutput = '检测报告：unsafe.exe'
 [IO.File]::WriteAllText((Join-Path $State 'unsafe.exe'), 'not executable', $Utf8)
 Write-JsonFile (Get-RunPath 'TR-1') $run
 $rejected = $false
@@ -110,6 +118,12 @@ assert serialize_run(historical)["blockedProcesses"] == 1
 assert historical["started"][0]["result"] == "Passed", "Polling mutated saved state"
 historical["started"][0]["result"] = "Interrupted"
 assert serialize_run(historical)["status"] == "Interrupted"
+item = {"consoleOutput": "检测报告：C:/old.html\n检测报告：D:/报告 空格.html", "reportLocation": "wrong.html"}
+set_report_reference(item)
+assert item["reportLocation"] == "D:/报告 空格.html" and item["reportUrl"].startswith("file:///D:/")
+item = {"consoleOutput": "检测报告：\nD:/wrong.html"}
+set_report_reference(item)
+assert "reportLocation" not in item
 with tempfile.TemporaryDirectory() as directory:
     RUNS = Path(directory)
     report = (RUNS / "报告 空格.html").resolve()
@@ -121,6 +135,8 @@ with tempfile.TemporaryDirectory() as directory:
     ]}
     summary = serialize_run(run)
     assert (summary["passedProcesses"], summary["failedProcesses"], summary["blockedProcesses"], summary["progress"]) == (1, 1, 1, 100)
+    assert summary["status"] == "Completed"
+    run["started"][0]["consoleOutput"] = "检测报告：" + run["started"][0]["reportLocation"]
     atomic_json(run_path("TR-1"), run)
     with patch.object(subprocess, "run") as opener:
         result = handle("test-runs/TR-1/reports/1/open", "POST", {})
@@ -128,6 +144,8 @@ with tempfile.TemporaryDirectory() as directory:
         assert opener.call_args.args[0][-1] == str(report)
     report.rename(report.with_suffix(".exe"))
     run["started"][0]["reportLocation"] = report.with_suffix(".exe").name
+    assert summary["status"] == "Completed"
+    run["started"][0]["consoleOutput"] = "检测报告：" + run["started"][0]["reportLocation"]
     atomic_json(run_path("TR-1"), run)
     with patch.object(subprocess, "run") as opener:
         try:

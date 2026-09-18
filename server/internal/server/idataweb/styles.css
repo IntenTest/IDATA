@@ -3873,12 +3873,4 @@ h3,
   }
 }
 
-.remote-connection-actions .el-button--primary {
-  --el-button-bg-color: #303846;
-  --el-button-border-color: #303846;
-  --el-button-hover-bg-color: #465164;
-  --el-button-hover-border-color: #465164;
-  --el-button-active-bg-color: #202735;
-  --el-button-active-border-color: #202735;
-}
 .result-blocked strong { color: #b88216; }

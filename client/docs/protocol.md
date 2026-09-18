@@ -45,7 +45,7 @@ address. All HTTP/WebSocket handlers apply the same PC scope. The report content
 Test case archives: POST /api/test-cases/update starts or rejoins a background update;
 GET /api/test-cases/update returns idle/running/complete/failed and a message.
 The Server-owned worker downloads the saved testCaseArchiveUrl on the execution PC with `curl.exe`, validates
-UTF-8 archive paths and the mapping CSV, replaces ~/.idata/newest_testcases, and
+UTF-8 archive paths and the mapping CSV, replaces D:/.idata/newest_testcases on Windows (~/.idata/newest_testcases on macOS), and
 saves the new library path. The Server also constructs every
 `IDATA.exe cli bundle run --path ...` test command and sends it through the same
 generic command channel.

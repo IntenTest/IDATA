@@ -266,7 +266,7 @@ def install_test_case_archive(settings):
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
             raise RuntimeError("Set a valid HTTP or HTTPS test case archive URL in Settings.")
-        parent = Path.home() / ".idata"
+        parent = Path("D:/.idata") if os.name == "nt" else Path.home() / ".idata"
         if parent.is_symlink():
             raise RuntimeError("The managed idata directory must not be a symbolic link.")
         parent.mkdir(parents=True, exist_ok=True)
@@ -694,6 +694,11 @@ def console_marker(console_output: str, label: str, expected: str) -> bool:
 def report_reference(console_output: str) -> tuple[str, str] | None:
     lines = console_output.splitlines()
 
+    for line in reversed(lines):
+        match = re.search(r"检测报告[ \t]*[：:][ \t]*([^\r\n]+)", line)
+        if match:
+            return "", match.group(1).strip().strip("\"'")
+
     # Screenshot and recording inspection print their complete report paths
     # after "汇总 HTML" and "检测报告", respectively. Search backwards so a
     # later report replaces any earlier report mentioned in the same log.
@@ -744,7 +749,7 @@ def resolve_report(
         return None
     storage_path, report_value = reference
     if report_value.startswith(("http://", "https://")):
-        return report_value, report_value
+        return None
 
     report_path = Path(report_value).expanduser()
     candidates = [report_path]
@@ -899,8 +904,6 @@ def serialize_test_run(run: dict) -> dict:
             if unfinished_count
             else "Interrupted"
             if interrupted_count
-            else "Failed"
-            if failed_count
             else "Completed"
         ),
         "runningProcesses": unfinished_count,

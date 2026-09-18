@@ -66,7 +66,7 @@ without excluding credentials and local logs/settings.
 The official Windows Client EXE contains no IDATA business worker or private Python
 runtime. Start the EXE once, then use the website launch link. Server-supplied
 management workers keep persistent settings under
-`%USERPROFILE%\.idata\server-command-runtime`. HDC, IDATA.exe, device drivers, and
+`D:\.idata\server-command-runtime`. HDC, IDATA.exe, device drivers, and
 the actual test interpreter, dependencies, and scripts remain part of the PC's
 test environment. Use absolute paths in the web Settings page.
 
@@ -122,7 +122,7 @@ the inbox `curl.exe` and extracts it with the inbox `tar.exe` on Windows. No she
 command is constructed from the URL.
 
 The worker stages and validates the archive, then replaces
-`%USERPROFILE%\.idata\newest_testcases` on Windows (`~/.idata/newest_testcases` on
+`D:\.idata\newest_testcases` on Windows (`~/.idata/newest_testcases` on
 macOS). Missing directories are created. The previous managed directory is removed
 only after successful installation; failed downloads or validation retain it.
 Custom library directories are not deleted. The archive must contain one
@@ -141,7 +141,7 @@ separate deployment.
 Windows test cases open in a visible PowerShell console. Each case records its
 command, paths, Windows and PowerShell versions, combined stdout/stderr, exception,
 and exit code in a UTF-8 log under
-`%USERPROFILE%\.idata\server-command-runtime\logs\<run-id>`. The run details page
+`D:\.idata\server-command-runtime\logs\<run-id>`. The run details page
 shows the collected output and provides a download button for the complete log.
 
 Regression check: `python3 -m unittest discover -s idata/app -p 'test_*.py'`.

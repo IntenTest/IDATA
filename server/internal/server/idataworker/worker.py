@@ -12,7 +12,7 @@ import tarfile
 import tempfile
 import time
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from urllib.parse import urlparse
 
 _embedded_header = globals().get("SERVER_EMBEDDED_HEADER")
@@ -24,11 +24,12 @@ else:
     _worker_path_value = os.environ.get("IDATA_SERVER_WORKER_PATH") or globals().get("__file__", "")
 WORKER_PATH = Path(_worker_path_value).resolve() if _worker_path_value else None
 SERVER_WORKER_SOURCE = globals().get("SERVER_WORKER_SOURCE")
-STATE = Path.home() / ".idata" / "server-command-runtime"
+DATA_ROOT = Path("D:/.idata") if os.name == "nt" else Path.home() / ".idata"
+STATE = DATA_ROOT / "server-command-runtime"
 SETTINGS = STATE / "settings.json"
 RUNS = STATE / "runs"
 UPDATE_STATUS = STATE / "test-case-update.json"
-LIBRARY = Path.home() / ".idata" / "newest_testcases"
+LIBRARY = DATA_ROOT / "newest_testcases"
 DEFAULTS = {
     "projectName": "IDATA", "releaseName": "FangTian 1.10-1.12",
     "defaultEnvironment": "HarmonyOS", "defaultOwner": "kouyanan 30030842",
@@ -193,16 +194,37 @@ def case_result(output, case_name):
     return "Blocked" if not markers else "Passed" if markers[-1] == "成功" else "Failed"
 
 
+def set_report_reference(item, library_path=None):
+    markers = re.findall(r"检测报告[ \t]*[:：][ \t]*([^\r\n]+)", item.get("consoleOutput", ""))
+    if not markers:
+        return
+    path = markers[-1].strip().strip("\"'")
+    item["reportLocation"] = path
+    item["reportUrl"] = None
+    if re.match(r"(?i)^(?:https?://|file:|\\\\)", path) or Path(path).suffix.lower() not in {".html", ".htm"}:
+        return
+    if re.match(r"^[A-Za-z]:[\\/]", path):
+        item["reportUrl"] = PureWindowsPath(path).as_uri()
+    else:
+        report = Path(path).expanduser()
+        if not report.is_absolute():
+            if not library_path:
+                return
+            report = Path(library_path) / report
+        item["reportUrl"] = report.resolve().as_uri()
+
+
 def serialize_run(run):
     processes = [dict(item) for item in run["started"]]
     for item in processes:
+        set_report_reference(item, run.get("libraryPath"))
         if item["result"] in {"Passed", "Failed", "Blocked"} and item.get("testCaseName"):
             item["result"] = case_result(item.get("consoleOutput", ""), item["testCaseName"])
     finished = [item for item in processes if item["result"] not in {"Pending", "Running"}]
     failed = sum(item["result"] == "Failed" for item in finished)
     blocked = sum(item["result"] == "Blocked" for item in finished)
     interrupted = sum(item["result"] == "Interrupted" for item in finished)
-    return {**run, "started": processes, "status": "Interrupted" if run.get("stopRequested") else "Running" if len(finished) < len(processes) else "Interrupted" if interrupted else "Failed" if failed else "Blocked" if blocked else "Completed", "runningProcesses": len(processes) - len(finished), "totalProcesses": len(processes), "executedProcesses": len(finished), "passedProcesses": sum(item["result"] == "Passed" for item in finished), "failedProcesses": failed, "blockedProcesses": blocked, "interruptedProcesses": interrupted, "progress": round(len(finished) / len(processes) * 100) if processes else 0, "consoleOutput": "\n\n".join(item.get("consoleOutput", "") for item in processes)}
+    return {**run, "started": processes, "status": "Interrupted" if run.get("stopRequested") else "Running" if len(finished) < len(processes) else "Interrupted" if interrupted else "Completed", "runningProcesses": len(processes) - len(finished), "totalProcesses": len(processes), "executedProcesses": len(finished), "passedProcesses": sum(item["result"] == "Passed" for item in finished), "failedProcesses": failed, "blockedProcesses": blocked, "interruptedProcesses": interrupted, "progress": round(len(finished) / len(processes) * 100) if processes else 0, "consoleOutput": "\n\n".join(item.get("consoleOutput", "") for item in processes)}
 
 
 def run_path(run_id):
@@ -236,10 +258,7 @@ def execute_run(run_id):
             item.update(result="Interrupted", exitCode=None, interruptionMessage="The test run was closed manually.", consoleOutput=output)
         else:
             item.update(result=case_result(output, item["testCaseName"]), exitCode=exit_code, consoleOutput=output)
-        match = re.search(r"(?:report|report path|报告路径)\s*[:：]\s*(.+?\.html?)", output, re.I)
-        if match:
-            item["reportLocation"] = match.group(1).strip().strip('"')
-            item["reportUrl"] = "available"
+        set_report_reference(item, run.get("libraryPath"))
         atomic_json(path, run)
 
 
@@ -308,6 +327,8 @@ def handle(operation, method, body):
     if match and method == "POST":
         run = json.loads(run_path(match.group(1)).read_text(encoding="utf-8"))
         item = next((value for value in run["started"] if value["testCase"] == match.group(2)), None)
+        if item:
+            set_report_reference(item, run.get("libraryPath"))
         if not item or not item.get("reportLocation"):
             raise RuntimeError("Test report was not found.")
         report = Path(item["reportLocation"]).expanduser()

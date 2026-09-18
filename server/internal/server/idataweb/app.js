@@ -1695,10 +1695,8 @@ const App = {
     function runStatusType(status) {
       return {
         Completed: "success",
-        Failed: "danger",
         Interrupted: "danger",
         Running: "warning",
-        Blocked: "danger",
         Ready: "info",
       }[status] || "info";
     }
@@ -2006,7 +2004,7 @@ const App = {
         owner: appSettings.defaultOwner,
         consoleOutput: run.consoleOutput || "",
         caseResults: run.started || [],
-        status: run.status,
+        status: ["Failed", "Blocked"].includes(run.status) ? (finished ? "Completed" : "Running") : run.status,
         totalCases: run.totalProcesses,
         executedCases: run.executedProcesses || 0,
         passed: run.passedProcesses || 0,
@@ -2474,7 +2472,7 @@ const App = {
                   aria-label="Filter test runs by status"
                 >
                   <el-option
-                    v-for="status in ['Running', 'Ready', 'Blocked', 'Failed', 'Interrupted', 'Completed']"
+                    v-for="status in ['Running', 'Ready', 'Interrupted', 'Completed']"
                     :key="status"
                     :label="t(status)"
                     :value="status"
@@ -2657,7 +2655,7 @@ const App = {
                   ? 'Test execution is in progress.'
                   : selectedTestRun.status === 'Interrupted'
                   ? 'The test execution was interrupted before completion.'
-                  : selectedTestRun.status === 'Blocked'
+                  : selectedTestRun.blocked > 0 && !selectedTestRun.failed
                   ? 'No final success or failure marker was found for one or more cases.'
                   : selectedTestRun.failed || selectedTestRun.blocked
                     ? 'Review the recorded failures before closing this run.'
@@ -3403,7 +3401,7 @@ const App = {
               <div class="settings-grid">
                 <el-form-item label="Test case archive URL" class="settings-path-field">
                   <el-input v-model="appSettings.testCaseArchiveUrl" placeholder="http://10.90.65.189:54322/Testcases.tar.gz" />
-                  <span class="settings-field-help">Changes are saved automatically. The execution PC downloads and replaces .idata/newest_testcases in your user folder, then reloads the test cases.</span>
+                  <span class="settings-field-help">Changes are saved automatically. The execution PC downloads and replaces D:/.idata/newest_testcases on Windows (~/.idata/newest_testcases on macOS), then reloads the test cases.</span>
                 </el-form-item>
                 <el-form-item :label="t('Project name')">
                   <el-input v-model="appSettings.projectName" />
