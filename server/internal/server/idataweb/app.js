@@ -259,6 +259,7 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Close this test run?": "确认强制关闭此任务？",
   "The active execution window and all remaining test cases will be stopped. This action cannot be undone.": "执行窗口及所有剩余测试用例都将被终止，此操作无法撤销。",
   "Delete test run": "删除测试任务",
+  "Delete": "删除",
   "Delete this test run?": "确定删除此测试任务？",
   "The task will be removed from history. Local report and log files will be kept.": "任务将从历史记录中删除，本地报告和日志文件会保留。",
   "Test run deleted.": "测试任务已删除。",
@@ -2586,7 +2587,7 @@ const App = {
                     {{ t('View') }}
                   </el-button>
                   <el-button plain size="small" type="danger" :loading="deletingTestRunIds.includes(row.id)" @click.stop="deleteTestRun(row)">
-                    {{ t('Delete test run') }}
+                    {{ t('Delete') }}
                   </el-button>
                 </template>
               </el-table-column>

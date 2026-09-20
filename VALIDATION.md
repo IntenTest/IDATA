@@ -1,4 +1,4 @@
-# Validation — 20 September 2026 (v0.2.49)
+# Validation — 20 September 2026 (v0.2.50)
 
 Passed:
 
@@ -11,6 +11,8 @@ Passed:
   report, log and case-result regressions included in the full Server/Client suites.
 - Report actions use one button-only opening path and suppress concurrent duplicate
   requests for the same run and test case in both local and Server web interfaces.
+- The test-run table action uses the concise Delete label while the confirmation
+  dialog retains the explicit test-run wording.
 - Chrome UI with fixture API: confirmation, cancel without mutation, successful
   deletion, running-task warning, refresh persistence, and no browser page errors.
 - Linux amd64 Server and Windows amd64 Client cross-builds.
