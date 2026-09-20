@@ -29,6 +29,7 @@ from test_commands import build_launch_command, build_test_command
 HOST = "127.0.0.1"
 PORT = 54321
 APP_DIRECTORY = Path(__file__).resolve().parent
+SERVER_VERSION = "0.2.51"
 PROJECT_DIRECTORY = APP_DIRECTORY.parent
 VENDOR_DIRECTORY = APP_DIRECTORY.parent / "vendor"
 SETTINGS_PATH = APP_DIRECTORY / "config" / "settings.json"
@@ -971,6 +972,10 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         request_path = urlparse(self.path).path
+        if request_path == "/healthz":
+            send_json(self, 200, {"status": "ok", "version": SERVER_VERSION})
+            return
+
         if request_path == "/api/devices":
             send_json(self, 200, discover_hdc_devices())
             return

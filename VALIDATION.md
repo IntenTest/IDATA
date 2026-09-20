@@ -1,4 +1,4 @@
-# Validation — 20 September 2026 (v0.2.50)
+# Validation — 20 September 2026 (v0.2.51)
 
 Passed:
 
@@ -13,6 +13,8 @@ Passed:
   requests for the same run and test case in both local and Server web interfaces.
 - The test-run table action uses the concise Delete label while the confirmation
   dialog retains the explicit test-run wording.
+- The Settings page reads the compiled Server version from `/healthz`, displays it
+  as the corresponding `v`-prefixed GitHub Release tag, and keeps it read-only.
 - Chrome UI with fixture API: confirmation, cancel without mutation, successful
   deletion, running-task warning, refresh persistence, and no browser page errors.
 - Linux amd64 Server and Windows amd64 Client cross-builds.

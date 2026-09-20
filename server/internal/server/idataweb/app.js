@@ -188,6 +188,8 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Configure application.": "配置应用参数",
   "Edit the runtime parameters stored in the local config file.": "管理本地运行参数。",
   "Config file": "配置文件",
+  "Server version": "Server 版本",
+  "Matches the deployed GitHub Release tag.": "与已部署的 GitHub Release 标签一致。",
   "Project name": "项目名称",
   "Release name": "版本名称",
   "Default environment": "默认环境",
@@ -752,6 +754,7 @@ const App = {
     const testCaseUpdating = ref(false);
     const testCaseUpdateStatus = ref("");
     const settingsSavedAt = ref("");
+    const serverVersion = ref("");
     let settingsLoaded = false;
     let applyingSettings = false;
     let settingsSaveTimer = 0;
@@ -1282,6 +1285,7 @@ const App = {
       }
       if (view === "Settings") {
         loadSettings();
+        loadServerVersion();
       }
       if (["Test Cases", "New Test Run"].includes(view) && settingsLoaded) {
         loadTestCases();
@@ -1486,6 +1490,16 @@ const App = {
           error instanceof Error ? error.message : "Unable to load settings.";
       } finally {
         settingsLoading.value = false;
+      }
+    }
+
+    async function loadServerVersion() {
+      try {
+        const response = await fetch("/healthz", { cache: "no-store" });
+        const result = await response.json();
+        serverVersion.value = response.ok && result.version ? String(result.version) : "";
+      } catch (_error) {
+        serverVersion.value = "";
       }
     }
 
@@ -2208,6 +2222,7 @@ const App = {
       settingsLoading,
       settingsSaving,
       settingsSavedAt,
+      serverVersion,
       connectionInfo,
       today,
       changeTestCaseSort,
@@ -3460,6 +3475,10 @@ const App = {
                 </el-form-item>
                 <el-form-item :label="t('Release name')">
                   <el-input v-model="appSettings.releaseName" />
+                </el-form-item>
+                <el-form-item :label="t('Server version')">
+                  <el-input :model-value="serverVersion ? 'v' + serverVersion : '—'" readonly />
+                  <span class="settings-field-help">{{ t('Matches the deployed GitHub Release tag.') }}</span>
                 </el-form-item>
                 <el-form-item :label="t('Default environment')">
                   <el-input v-model="appSettings.defaultEnvironment" />
