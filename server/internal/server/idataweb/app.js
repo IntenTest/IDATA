@@ -785,6 +785,7 @@ const App = {
     const testRunClosing = ref(false);
     const deletingTestRunIds = ref([]);
     const deletedTestRunIds = new Set();
+    const openingTestReports = new Set();
     const testRunError = ref("");
     const testCasesLoading = ref(false);
     const testCasesError = ref("");
@@ -1620,6 +1621,9 @@ const App = {
     }
 
     async function openTestReport(testCase) {
+      const reportKey = `${selectedTestRunId.value}:${testCase.testCase}`;
+      if (openingTestReports.has(reportKey)) return;
+      openingTestReports.add(reportKey);
       try {
         const runId = encodeURIComponent(selectedTestRunId.value);
         const caseId = encodeURIComponent(testCase.testCase);
@@ -1628,6 +1632,8 @@ const App = {
         if (!response.ok) throw new Error(result.error || "Unable to open the report.");
       } catch (error) {
         ElementPlus.ElMessage({message: error.message, type: "error"});
+      } finally {
+        openingTestReports.delete(reportKey);
       }
     }
 
@@ -2766,14 +2772,14 @@ const App = {
                       {{ t(check.label) }}
                     </span>
                   </div>
-                  <a
+                  <button
                     v-if="testCase.reportUrl"
+                    type="button"
                     class="case-report-link"
-                    :href="testCase.reportUrl"
-                    @click.prevent="openTestReport(testCase)"
+                    @click="openTestReport(testCase)"
                   >
                     {{ t('Inspection report') }} ↗
-                  </a>
+                  </button>
                   <el-button
                     v-if="testCase.logPath"
                     text

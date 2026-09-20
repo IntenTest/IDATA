@@ -1,4 +1,4 @@
-# Validation — 18 September 2026 (v0.2.48)
+# Validation — 20 September 2026 (v0.2.49)
 
 Passed:
 
@@ -9,6 +9,8 @@ Passed:
   unauthenticated/cross-origin deletion.
 - Existing connection/auth/IP isolation, settings, test execution, cancellation,
   report, log and case-result regressions included in the full Server/Client suites.
+- Report actions use one button-only opening path and suppress concurrent duplicate
+  requests for the same run and test case in both local and Server web interfaces.
 - Chrome UI with fixture API: confirmation, cancel without mutation, successful
   deletion, running-task warning, refresh persistence, and no browser page errors.
 - Linux amd64 Server and Windows amd64 Client cross-builds.
