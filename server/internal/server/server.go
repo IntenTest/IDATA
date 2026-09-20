@@ -18,7 +18,7 @@ import (
 	"idata-server/internal/protocol"
 )
 
-const ReleaseVersion = "0.2.51"
+const ReleaseVersion = "0.2.52"
 
 const maxRequestBody = 64 << 10
 

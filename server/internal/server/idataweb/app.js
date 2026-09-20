@@ -2554,7 +2554,7 @@ const App = {
               row-key="id"
               @row-click="selectTestRun"
             >
-              <el-table-column :label="t('Run')" min-width="290">
+              <el-table-column :label="t('Run')" min-width="240">
                 <template #default="{ row }">
                   <button class="run-name-cell" type="button" @click.stop="selectTestRun(row)">
                     <span>{{ row.id }} · {{ displayValue(row.suite) }}</span>
@@ -2569,9 +2569,9 @@ const App = {
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="device" :label="t('Device')" width="145" />
-              <el-table-column prop="owner" :label="t('Owner')" width="135" />
-              <el-table-column :label="t('Results')" width="140">
+              <el-table-column prop="device" :label="t('Device')" min-width="140" show-overflow-tooltip />
+              <el-table-column prop="owner" :label="t('Owner')" min-width="110" show-overflow-tooltip />
+              <el-table-column :label="t('Results')" width="130">
                 <template #default="{ row }">
                   <div class="run-result-cell">
                     <span class="passed" :title="t('Passed')">{{ row.passed }}</span>
@@ -2580,7 +2580,7 @@ const App = {
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column :label="t('Progress')" width="155">
+              <el-table-column :label="t('Progress')" min-width="160">
                 <template #default="{ row }">
                   <div class="run-progress-cell">
                     <el-progress
@@ -2593,10 +2593,10 @@ const App = {
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column :label="t('Started at')" width="185">
+              <el-table-column :label="t('Started at')" width="180">
                 <template #default="{ row }">{{ row.startedAt ? new Date(row.startedAt).toLocaleString(isChinese ? 'zh-CN' : 'en-GB', { hour12: false }) : '—' }}</template>
               </el-table-column>
-              <el-table-column :label="t('Actions')" width="220" fixed="right">
+              <el-table-column :label="t('Actions')" width="160" fixed="right">
                 <template #default="{ row }">
                   <el-button plain size="small" @click.stop="selectTestRun(row)">
                     {{ t('View') }}
