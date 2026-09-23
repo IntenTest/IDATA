@@ -241,9 +241,6 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Case file": "用例文件",
   "Starting...": "正在启动……",
   "Test run failed": "测试任务启动失败",
-  "Console output": "控制台输出",
-  "Saved output is updated when each test case finishes.": "每个用例执行结束后，这里会更新已保存的输出。",
-  "Waiting for console output...": "正在等待控制台输出……",
   "Case results": "用例结果",
   "Automation result": "自动化执行",
   "Log inspection": "日志检查",
@@ -2066,7 +2063,6 @@ const App = {
         suite: `${run.totalProcesses} test case${run.totalProcesses === 1 ? "" : "s"}`,
         device: run.device,
         owner: appSettings.defaultOwner,
-        consoleOutput: run.consoleOutput || "",
         caseResults: run.started || [],
         status: ["Failed", "Blocked"].includes(run.status) ? (finished ? "Completed" : "Running") : run.status,
         totalCases: run.totalProcesses,
@@ -2828,19 +2824,7 @@ const App = {
               </div>
             </section>
 
-            <section
-              v-if="selectedTestRun.liveProcessRun"
-              class="run-console-report"
-            >
-              <div class="section-heading">
-                <div>
-                  <p class="eyebrow">{{ t('Console output') }}</p>
-                  <h3>{{ t('Console output') }}</h3>
-                </div>
-                <span>{{ t('Saved output is updated when each test case finishes.') }}</span>
-              </div>
-              <pre>{{ selectedTestRun.consoleOutput || t('Waiting for console output...') }}</pre>
-            </section>
+
           </section>
 
           <el-empty v-else :description="t('No test runs match these filters')">

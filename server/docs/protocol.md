@@ -130,3 +130,9 @@ and log open operations return `{"opened":true}` on success. Only existing local
 HTML reports and text logs can be opened. Execution extracts result markers and
 report locations once at completion. Later reads use the saved case `result` and
 `reportLocation` without parsing `consoleOutput`, so manual corrections persist.
+
+Run API responses omit consoleOutput at both task and case level. The task details
+page uses the Log action to open the full local log rather than displaying console
+output inline. Serialization copies case records and leaves persisted logs, results,
+and report paths unchanged. The Server checks the Client's stdout truncation flag
+before decoding and returns an explicit size limit error for oversized responses.

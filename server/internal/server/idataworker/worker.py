@@ -205,12 +205,13 @@ def set_report_reference(item, library_path=None):
 def serialize_run(run):
     processes = [dict(item) for item in run["started"]]
     for item in processes:
+        item.pop("consoleOutput", None)
         item.pop("reportUrl", None)  # Ignore the obsolete field in existing records.
     finished = [item for item in processes if item["result"] not in {"Pending", "Running"}]
     failed = sum(item["result"] == "Failed" for item in finished)
     blocked = sum(item["result"] == "Blocked" for item in finished)
     interrupted = sum(item["result"] == "Interrupted" for item in finished)
-    return {**run, "started": processes, "status": "Interrupted" if run.get("stopRequested") else "Running" if len(finished) < len(processes) else "Interrupted" if interrupted else "Completed", "runningProcesses": len(processes) - len(finished), "totalProcesses": len(processes), "executedProcesses": len(finished), "passedProcesses": sum(item["result"] == "Passed" for item in finished), "failedProcesses": failed, "blockedProcesses": blocked, "interruptedProcesses": interrupted, "progress": round(len(finished) / len(processes) * 100) if processes else 0, "consoleOutput": "\n\n".join(item.get("consoleOutput", "") for item in processes)}
+    return {**{key: value for key, value in run.items() if key != "consoleOutput"}, "started": processes, "status": "Interrupted" if run.get("stopRequested") else "Running" if len(finished) < len(processes) else "Interrupted" if interrupted else "Completed", "runningProcesses": len(processes) - len(finished), "totalProcesses": len(processes), "executedProcesses": len(finished), "passedProcesses": sum(item["result"] == "Passed" for item in finished), "failedProcesses": failed, "blockedProcesses": blocked, "interruptedProcesses": interrupted, "progress": round(len(finished) / len(processes) * 100) if processes else 0}
 
 
 def run_path(run_id):

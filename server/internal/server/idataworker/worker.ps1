@@ -209,11 +209,19 @@ function Set-ReportReference($Item, [string]$LibraryPath = '') {
 
 function Serialize-Run($Run) {
     # Use saved results and paths; listing a run must not read execution logs.
-    foreach ($item in @($Run.started)) {
-        if ($item -is [System.Collections.IDictionary]) { $item.Remove('reportUrl') }
-        else { $item.PSObject.Properties.Remove('reportUrl') }
-    }
-    $started = @($Run.started); $finished = @($started | Where-Object { $_.result -notin @('Pending','Running') })
+    # Copy API records without logs; preserve saved output for log actions.
+    $started = @(foreach ($item in @($Run.started)) {
+        $copy = [ordered]@{}
+        if ($item -is [System.Collections.IDictionary]) {
+            foreach ($key in $item.Keys) { $copy[$key] = $item[$key] }
+        } else {
+            foreach ($property in $item.PSObject.Properties) { $copy[$property.Name] = $property.Value }
+        }
+        $copy.Remove('reportUrl')
+        $copy.Remove('consoleOutput')
+        [pscustomobject]$copy
+    })
+    $finished = @($started | Where-Object { $_.result -notin @('Pending','Running') })
     $failed = @($finished | Where-Object result -eq 'Failed').Count
     $blocked = @($finished | Where-Object result -eq 'Blocked').Count
     $interrupted = @($finished | Where-Object result -eq 'Interrupted').Count
@@ -225,7 +233,7 @@ function Serialize-Run($Run) {
         runningProcesses=($started.Count-$finished.Count); totalProcesses=$started.Count; executedProcesses=$finished.Count
         passedProcesses=$passed; failedProcesses=$failed; blockedProcesses=$blocked; interruptedProcesses=$interrupted
         progress=$progress
-        consoleOutput=(@($started | ForEach-Object {[string]$_.consoleOutput}) -join "`n`n"); started=$started
+        started=$started
     }
 }
 

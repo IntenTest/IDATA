@@ -180,3 +180,6 @@ records are ignored. Relative report paths resolve against the run's `libraryPat
 The log action uses `logPath` and opens the existing local text file on the execution
 PC (Notepad on Windows); it does not download or upload the log. Saved console
 output is refreshed when a case finishes, rather than read from its log on each poll.
+
+Task details no longer display console output. Task API responses omit consoleOutput
+at both task and case level; use the Log action to open full logs on the execution PC.

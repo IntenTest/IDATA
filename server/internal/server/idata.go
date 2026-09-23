@@ -155,6 +155,10 @@ func (s *Server) handleIDATA(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 502, "The server command failed: "+detail)
 		return
 	}
+	if result.StdoutTruncated {
+		writeError(w, 502, "The Server worker response exceeded the Client output limit and was truncated. Full execution logs remain on the PC; reduce task history or increase IDATA_OUTPUT_LIMIT on the Client.")
+		return
+	}
 	response, err := decodeIDATAWorkerResponse(result.Stdout)
 	if err != nil {
 		detail := strings.TrimSpace(result.Stderr)

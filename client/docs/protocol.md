@@ -90,3 +90,6 @@ and log open operations return `{"opened":true}` on success. Only existing local
 HTML reports and text logs can be opened. Execution extracts result markers and
 report locations once at completion. Later reads use the saved case `result` and
 `reportLocation` without parsing `consoleOutput`, so manual corrections persist.
+
+Server run responses omit task and case consoleOutput; full logs are opened with
+the Log action. No Client protocol or version change is required.
