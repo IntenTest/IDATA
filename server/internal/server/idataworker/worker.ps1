@@ -205,32 +205,14 @@ function Set-ReportReference($Item, [string]$LibraryPath = '') {
     if ($markers.Count -eq 0) { return }
     $path = $markers[$markers.Count - 1].Groups[1].Value.Trim().Trim([char]34, [char]39)
     Set-ObjectValue $Item 'reportLocation' $path
-    Set-ObjectValue $Item 'reportUrl' $null
-    if ($path -match '^(?i)(https?://|file:|\\\\)' -or [IO.Path]::GetExtension($path) -notin @('.html', '.htm')) { return }
-    if (-not [IO.Path]::IsPathRooted($path) -and $path -notmatch '^[A-Za-z]:[\\/]') {
-        if (-not $LibraryPath) { return }
-        $path = [IO.Path]::GetFullPath((Join-Path $LibraryPath $path))
-    }
-    Set-ObjectValue $Item 'reportUrl' ([uri]::new($path, [UriKind]::Absolute)).AbsoluteUri
 }
 
 function Serialize-Run($Run) {
-    # Refresh only the response snapshot; the runner remains the sole state writer.
+    # Use saved results and paths; listing a run must not read execution logs.
     foreach ($item in @($Run.started)) {
-        $name = if ($item.executionName) { [string]$item.executionName } else { [string]$item.testCaseName }
-        if ($item.result -in @('Passed', 'Failed', 'Blocked') -and $name) {
-            Set-ObjectValue $item 'result' (Get-CaseResult ([string]$item.consoleOutput) $name)
-        }
-        if ($item.result -eq 'Running' -and $item.logPath) {
-            try {
-                $output = Read-LogText ([string]$item.logPath)
-                if ($output.Length -gt 0) { Set-ObjectValue $item 'consoleOutput' $output }
-            } catch {
-                # A temporarily unavailable log must not prevent status polling.
-            }
-        }
+        if ($item -is [System.Collections.IDictionary]) { $item.Remove('reportUrl') }
+        else { $item.PSObject.Properties.Remove('reportUrl') }
     }
-    foreach ($item in @($Run.started)) { Set-ReportReference $item ([string]$Run.libraryPath) }
     $started = @($Run.started); $finished = @($started | Where-Object { $_.result -notin @('Pending','Running') })
     $failed = @($finished | Where-Object result -eq 'Failed').Count
     $blocked = @($finished | Where-Object result -eq 'Blocked').Count
@@ -441,7 +423,19 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
     }
     if ($Operation -eq 'test-runs' -and $Method -eq 'GET') {
         $runsPath = Join-Path $State 'runs'; $runs = @()
-        if (Test-Path -LiteralPath $runsPath) { $runs = @(Get-ChildItem -LiteralPath $runsPath -File -Filter 'TR-*.json' | Where-Object { -not (Test-Path -LiteralPath ([IO.Path]::ChangeExtension($_.FullName, '.deleted'))) } | ForEach-Object { Serialize-Run (Read-JsonFile $_.FullName $null) } | Sort-Object startedAt -Descending) }
+        if (Test-Path -LiteralPath $runsPath) {
+            $runs = @(Get-ChildItem -LiteralPath $runsPath -File -Filter 'TR-*.json' | Where-Object { -not (Test-Path -LiteralPath ([IO.Path]::ChangeExtension($_.FullName, '.deleted'))) } | ForEach-Object {
+                $recordPath = $_.FullName
+                try {
+                    $run = Read-JsonFile $recordPath $null
+                    if (-not $run -or $run.id -ne $_.BaseName -or $run.startedAt -isnot [string] -or $run.started -isnot [array]) { throw 'Invalid test run record.' }
+                    foreach ($item in $run.started) {
+                        if ($item.result -notin @('Pending','Running','Passed','Failed','Blocked','Interrupted')) { throw 'Invalid test case result.' }
+                    }
+                    Serialize-Run $run
+                } catch { throw ("Unable to read test run ${recordPath}: " + $_.Exception.Message) }
+            } | Sort-Object startedAt -Descending)
+        }
         return [ordered]@{testRuns=$runs}
     }
     if ($Operation -eq 'test-runs' -and $Method -eq 'POST') {
@@ -455,7 +449,7 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
         foreach ($caseID in @($selected | Select-Object -Unique)) {
             if (-not $available.ContainsKey([string]$caseID)) { throw "Unknown test case selection: $caseID" }
             $case = $available[[string]$caseID]
-            $started += [ordered]@{testCase=[string]$caseID; testCaseName=$case.executionName; executionName=$case.executionName; inspectionMode=$mode; processId=$null; command="$idata cli bundle run --path $runner -- $($case.executionName) $mode $device"; result='Pending'; consoleOutput=''; exitCode=$null; reportUrl=$null; reportLocation=$null; checks=@()}
+            $started += [ordered]@{testCase=[string]$caseID; testCaseName=$case.executionName; executionName=$case.executionName; inspectionMode=$mode; processId=$null; command="$idata cli bundle run --path $runner -- $($case.executionName) $mode $device"; result='Pending'; consoleOutput=''; exitCode=$null; reportLocation=$null; checks=@()}
         }
         $run = [ordered]@{id=$runID; title=[string]$Body.name; device=$device; inspectionMode=$mode; startedAt=[DateTimeOffset]::Now.ToString('yyyy-MM-ddTHH:mm:ss.fffzzz'); libraryPath=[string]$current.testCaseLibraryPath; stopRequested=$false; started=$started}
         Write-JsonFile (Get-RunPath $runID) $run; Start-BackgroundRun $runID
@@ -478,20 +472,30 @@ function Handle-Request([string]$Operation, [string]$Method, $Body) {
         $run = Read-JsonFile (Get-RunPath $matches[1]) $null
         $caseID = $matches[2]
         $item = @($run.started | Where-Object {[string]$_.testCase -eq $caseID}) | Select-Object -First 1
-        if ($item) { Set-ReportReference $item ([string]$Run.libraryPath) }
         if (-not $item -or [string]::IsNullOrWhiteSpace([string]$item.reportLocation)) { throw 'Test report was not found.' }
         $path = [string]$item.reportLocation
         if (-not [IO.Path]::IsPathRooted($path)) { $path = Join-Path ([string]$run.libraryPath) $path }
         $file = Get-Item -LiteralPath $path -ErrorAction Stop
         if ($file.PSIsContainer -or $file.Extension -notin @('.html', '.htm') -or $file.FullName.StartsWith('\\')) { throw 'Only local HTML reports can be opened.' }
         Start-Process -FilePath $file.FullName -ErrorAction Stop | Out-Null
-        return [ordered]@{reportUrl=([uri]::new($file.FullName, [UriKind]::Absolute)).AbsoluteUri}
+        return [ordered]@{opened=$true}
     }
     if ($Operation -match '^test-runs/(TR-[0-9]+)/reports/([^/]+)/content$') {
         $run=Read-JsonFile (Get-RunPath $matches[1]) $null; $caseID=$matches[2]; $item=@($run.started | Where-Object {[string]$_.testCase -eq $caseID})[0]
-        if (-not $item -or -not (Test-Path -LiteralPath ([string]$item.reportLocation) -PathType Leaf)) { throw 'Test report was not found.' }
-        $file=Get-Item -LiteralPath ([string]$item.reportLocation); if ($file.Length -gt 8388608) { throw 'Test report exceeds the viewing limit.' }
+        $reportPath = [string]$item.reportLocation
+        if ($reportPath -and -not [IO.Path]::IsPathRooted($reportPath)) { $reportPath = Join-Path ([string]$run.libraryPath) $reportPath }
+        if (-not $item -or -not $reportPath -or -not (Test-Path -LiteralPath $reportPath -PathType Leaf)) { throw 'Test report was not found.' }
+        $file=Get-Item -LiteralPath $reportPath; if ($file.Length -gt 8388608) { throw 'Test report exceeds the viewing limit.' }
         return [ordered]@{contentBase64=[Convert]::ToBase64String([IO.File]::ReadAllBytes($file.FullName))}
+    }
+    if ($Operation -match '^test-runs/(TR-[0-9]+)/logs/([^/]+)/open$' -and $Method -eq 'POST') {
+        $run = Read-JsonFile (Get-RunPath $matches[1]) $null; $caseID = $matches[2]
+        $item = @($run.started | Where-Object {[string]$_.testCase -eq $caseID}) | Select-Object -First 1
+        if (-not $item -or [string]::IsNullOrWhiteSpace([string]$item.logPath)) { throw 'Test execution log was not found.' }
+        $file = Get-Item -LiteralPath ([string]$item.logPath) -ErrorAction Stop
+        if ($file.PSIsContainer -or $file.Extension -notin @('.log', '.txt') -or $file.FullName.StartsWith('\\')) { throw 'Only local text logs can be opened.' }
+        Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\notepad.exe') -ArgumentList ('"' + $file.FullName + '"') -ErrorAction Stop | Out-Null
+        return [ordered]@{opened=$true}
     }
     if ($Operation -match '^test-runs/(TR-[0-9]+)/logs/([^/]+)/content$') {
         $run=Read-JsonFile (Get-RunPath $matches[1]) $null; $caseID=$matches[2]; $item=@($run.started | Where-Object {[string]$_.testCase -eq $caseID})[0]

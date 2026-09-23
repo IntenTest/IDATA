@@ -14,6 +14,7 @@ Allowed operations:
 - POST /api/test-runs
 - POST /api/test-runs/{run}/close
 - POST /api/test-runs/{run}/reports/{case}/open (open the HTML report on the execution PC)
+- POST /api/test-runs/{run}/logs/{case}/open (open the local text log on the execution PC)
 - GET /api/test-runs/{run}/reports/{case}/content (remote report viewing)
 - PUT /api/settings
 
@@ -81,3 +82,11 @@ first. Deletion is idempotent and uses a durable .deleted marker beside the run
 record, preserving cancellation state during late background writes. Lists omit
 marked runs. Local logs and reports are retained. The generic Client protocol
 and Client version are unchanged.
+
+Run responses expose `reportLocation` as the sole report reference. Newly created
+records omit `reportUrl`; old copies of that field are ignored. Report opening
+and content retrieval resolve relative locations against `libraryPath`. Report
+and log open operations return `{"opened":true}` on success. Only existing local
+HTML reports and text logs can be opened. Execution extracts result markers and
+report locations once at completion. Later reads use the saved case `result` and
+`reportLocation` without parsing `consoleOutput`, so manual corrections persist.

@@ -242,7 +242,7 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Starting...": "正在启动……",
   "Test run failed": "测试任务启动失败",
   "Console output": "控制台输出",
-  "Output is recorded here while the command runs.": "命令运行期间，所有输出都会记录在这里。",
+  "Saved output is updated when each test case finishes.": "每个用例执行结束后，这里会更新已保存的输出。",
   "Waiting for console output...": "正在等待控制台输出……",
   "Case results": "用例结果",
   "Automation result": "自动化执行",
@@ -251,8 +251,10 @@ const CHINESE_TRANSLATIONS = Object.freeze({
   "Recording inspection": "录屏检测",
   "Inspection report": "查看检测报告",
   "Unable to open the inspection report.": "无法打开检测报告。",
-  "Download execution log": "下载执行日志",
-  "Unable to download the execution log.": "无法下载执行日志。",
+  "Unable to load test runs.": "无法读取测试任务。",
+  "Invalid test run response.": "测试任务响应格式无效。",
+  "View execution log": "查看执行日志",
+  "Unable to open the execution log.": "无法打开执行日志。",
   "Log file": "日志文件",
   "Waiting": "等待中",
   "Test execution is in progress.": "测试正在执行，请等待结果更新。",
@@ -790,6 +792,10 @@ const App = {
     const deletingTestRunIds = ref([]);
     const deletedTestRunIds = new Set();
     const openingTestReports = new Set();
+    const openingTestLogs = new Set();
+    let loadingTestRuns = false;
+    let lastTestRunError = "";
+    let testRunErrorMessage = null;
     const testRunError = ref("");
     const testCasesLoading = ref(false);
     const testCasesError = ref("");
@@ -1429,7 +1435,11 @@ const App = {
         setRouteForView(view, options.runId);
       }
       activeView.value = view;
-      if (!["Overview", "Devices", "Test Cases", "Test Suites", "New Test Run", "Tasks", "Settings"].includes(view)) {
+      if (["Tasks", "Test Run Details"].includes(view)) {
+        lastTestRunError = "";
+        loadActiveTestRuns();
+      }
+      if (!["Overview", "Devices", "Test Cases", "Test Suites", "New Test Run", "Tasks", "Test Run Details", "Settings"].includes(view)) {
         ElementPlus.ElMessage({
           message: isChinese.value
             ? `${t(view)}已准备好进行下一步开发。`
@@ -1652,28 +1662,23 @@ const App = {
       }
     }
 
-    async function downloadTestLog(testCase) {
+    async function openTestLog(testCase) {
+      const key = `${selectedTestRunId.value}:${testCase.testCase}`;
+      if (openingTestLogs.has(key)) return;
+      openingTestLogs.add(key);
       try {
         const runId = encodeURIComponent(selectedTestRunId.value);
         const caseId = encodeURIComponent(testCase.testCase);
-        const response = await window.idataFetch(`/api/test-runs/${runId}/logs/${caseId}/content`);
-        if (!response.ok) {
-          const result = await response.json().catch(() => ({}));
-          throw new Error(result.error || t("Unable to download the execution log."));
-        }
-        const url = URL.createObjectURL(await response.blob());
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `${selectedTestRunId.value}-${testCase.testCase}.log`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        const response = await window.idataFetch(`/api/test-runs/${runId}/logs/${caseId}/open`, { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || t("Unable to open the execution log."));
       } catch (error) {
         ElementPlus.ElMessage({
-          message: error instanceof Error ? error.message : t("Unable to download the execution log."),
-          type: "error",
+          message: error instanceof Error ? error.message : t("Unable to open the execution log."),
+          type: "error", showClose: true,
         });
+      } finally {
+        openingTestLogs.delete(key);
       }
     }
 
@@ -1778,6 +1783,7 @@ const App = {
     onBeforeUnmount(() => {
       window.clearTimeout(settingsSaveTimer);
       window.clearInterval(testRunRefreshTimer);
+      testRunErrorMessage?.close();
       window.removeEventListener("popstate", syncViewFromLocation);
     });
 
@@ -2088,18 +2094,29 @@ const App = {
     }
 
     async function loadActiveTestRuns() {
+      if (loadingTestRuns) return;
+      loadingTestRuns = true;
       try {
         const response = await window.idataFetch("/api/test-runs", { cache: "no-store" });
-        if (!response.ok) {
-          return;
-        }
         const result = await response.json();
+        if (!response.ok) throw new Error(result.error || t("Unable to load test runs."));
+        if (!Array.isArray(result.testRuns)) throw new Error(t("Invalid test run response."));
         const visibleRuns = result.testRuns.filter((run) => !deletedTestRunIds.has(run.id));
-        const ids = new Set(visibleRuns.map((run) => run.id));
-        testRuns.value = testRuns.value.filter((run) => ids.has(run.id));
-        visibleRuns.forEach(upsertActiveTestRun);
-      } catch (_error) {
-        // Keep the last known state while the local service is temporarily unavailable.
+        const rows = visibleRuns.map(activeRunToTableRow);
+        testRuns.value = rows;
+        lastTestRunError = "";
+        testRunErrorMessage?.close();
+        testRunErrorMessage = null;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : t("Unable to load test runs.");
+        if (message !== lastTestRunError) {
+          testRunErrorMessage?.close();
+          testRunErrorMessage = ElementPlus.ElMessage({ message, type: "error", showClose: true, duration: 0 });
+          lastTestRunError = message;
+        }
+        // Preserve the last successful snapshot; dismissal lasts until recovery or re-entry.
+      } finally {
+        loadingTestRuns = false;
       }
     }
 
@@ -2152,7 +2169,7 @@ const App = {
       openCreateDialog,
       openCreateSuiteDialog,
       openTestReport,
-      downloadTestLog,
+      openTestLog,
       closeTestRun,
       deleteTestRun,
       deletingTestRunIds,
@@ -2789,7 +2806,7 @@ const App = {
                     </span>
                   </div>
                   <button
-                    v-if="testCase.reportUrl"
+                    v-if="testCase.reportLocation"
                     type="button"
                     class="case-report-link"
                     @click="openTestReport(testCase)"
@@ -2800,9 +2817,9 @@ const App = {
                     v-if="testCase.logPath"
                     text
                     type="primary"
-                    @click="downloadTestLog(testCase)"
+                    @click="openTestLog(testCase)"
                   >
-                    {{ t('Download execution log') }} ↓
+                    {{ t('View execution log') }} ↗
                   </el-button>
                   <small v-if="testCase.logPath">
                     {{ t('Log file') }}: {{ testCase.logPath }}
@@ -2820,7 +2837,7 @@ const App = {
                   <p class="eyebrow">{{ t('Console output') }}</p>
                   <h3>{{ t('Console output') }}</h3>
                 </div>
-                <span>{{ t('Output is recorded here while the command runs.') }}</span>
+                <span>{{ t('Saved output is updated when each test case finishes.') }}</span>
               </div>
               <pre>{{ selectedTestRun.consoleOutput || t('Waiting for console output...') }}</pre>
             </section>

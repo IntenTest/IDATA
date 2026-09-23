@@ -34,7 +34,7 @@ type idataWorkerResponse struct {
 var (
 	idataReadOperation   = regexp.MustCompile(`^(devices|settings|test-cases|test-cases/update|test-runs|test-runs/TR-[0-9]+/(reports|logs)/[A-Za-z0-9._%-]+/content)$`)
 	idataDeleteOperation = regexp.MustCompile(`^test-runs/TR-[0-9]+$`)
-	idataWriteOperation  = regexp.MustCompile(`^(test-cases/update|test-runs|test-runs/TR-[0-9]+/close|test-runs/TR-[0-9]+/reports/[A-Za-z0-9._%-]+/open)$`)
+	idataWriteOperation  = regexp.MustCompile(`^(test-cases/update|test-runs|test-runs/TR-[0-9]+/close|test-runs/TR-[0-9]+/(reports|logs)/[A-Za-z0-9._%-]+/open)$`)
 )
 
 func (s *Server) registerIDATA(mux *http.ServeMux) {

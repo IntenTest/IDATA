@@ -142,7 +142,8 @@ Windows test cases open in a visible PowerShell console. Each case records its
 command, paths, Windows and PowerShell versions, combined stdout/stderr, exception,
 and exit code in a UTF-8 log under
 `D:\.idata\server-command-runtime\logs\<run-id>`. The run details page
-shows the collected output and provides a download button for the complete log.
+shows the saved output and provides a View execution log action that opens the
+local file in a text editor on the execution PC.
 
 Regression check: `python3 -m unittest discover -s idata/app -p 'test_*.py'`.
 
@@ -155,8 +156,8 @@ Regression check: `python3 -m unittest discover -s idata/app -p 'test_*.py'`.
 The task list shows the recorded start time and sorts newest first. A completed
 case passes only when its last explicit `用例<case name>执行成功` marker is successful;
 `用例<case name>执行失败` means failure. Without either marker, the case is Blocked
-(yellow), even if its process exits with code zero. Historical completed cases
-are reclassified from their saved console output on read. Explicit cancellation
+(yellow), even if its process exits with code zero. Classification happens once when execution finishes; subsequent reads use the
+saved result without reclassifying console output. Explicit cancellation
 remains Interrupted.
 
 The inspection report action asks the connected execution PC to open the saved
@@ -167,3 +168,15 @@ On first use, download every executable in the latest internal release to the
 same folder and run IDATA-Client.exe once before launching it from the website.
 Direct Client launch displays a read-only server address; browser launch continues
 to supply the website's endpoint.
+
+Task history is read from `D:\.idata\server-command-runtime\runs\TR-<id>.json`
+on Windows (`~/.idata/server-command-runtime/runs` on macOS). Lists read only
+these records, without reading execution logs. A failed read displays a dismissible
+in-page error with the failing file and retains the last successful list.
+After a run finishes, manual corrections can update each `started` entry's `result`
+and `reportLocation` directly; console output does not override either field.
+`reportLocation` is the sole report path; obsolete `reportUrl` values in older
+records are ignored. Relative report paths resolve against the run's `libraryPath`.
+The log action uses `logPath` and opens the existing local text file on the execution
+PC (Notepad on Windows); it does not download or upload the log. Saved console
+output is refreshed when a case finishes, rather than read from its log on each poll.

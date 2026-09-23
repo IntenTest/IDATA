@@ -12,7 +12,7 @@ import tarfile
 import tempfile
 import time
 from datetime import datetime
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from urllib.parse import urlparse
 
 _embedded_header = globals().get("SERVER_EMBEDDED_HEADER")
@@ -200,26 +200,12 @@ def set_report_reference(item, library_path=None):
         return
     path = markers[-1].strip().strip("\"'")
     item["reportLocation"] = path
-    item["reportUrl"] = None
-    if re.match(r"(?i)^(?:https?://|file:|\\\\)", path) or Path(path).suffix.lower() not in {".html", ".htm"}:
-        return
-    if re.match(r"^[A-Za-z]:[\\/]", path):
-        item["reportUrl"] = PureWindowsPath(path).as_uri()
-    else:
-        report = Path(path).expanduser()
-        if not report.is_absolute():
-            if not library_path:
-                return
-            report = Path(library_path) / report
-        item["reportUrl"] = report.resolve().as_uri()
 
 
 def serialize_run(run):
     processes = [dict(item) for item in run["started"]]
     for item in processes:
-        set_report_reference(item, run.get("libraryPath"))
-        if item["result"] in {"Passed", "Failed", "Blocked"} and item.get("testCaseName"):
-            item["result"] = case_result(item.get("consoleOutput", ""), item["testCaseName"])
+        item.pop("reportUrl", None)  # Ignore the obsolete field in existing records.
     finished = [item for item in processes if item["result"] not in {"Pending", "Running"}]
     failed = sum(item["result"] == "Failed" for item in finished)
     blocked = sum(item["result"] == "Blocked" for item in finished)
@@ -235,15 +221,20 @@ def run_path(run_id):
 
 def execute_run(run_id):
     path = run_path(run_id)
-    run = json.loads(path.read_text(encoding="utf-8"))
+    run = json.loads(path.read_text(encoding="utf-8-sig"))
     for item in run["started"]:
-        latest = json.loads(path.read_text(encoding="utf-8"))
+        latest = json.loads(path.read_text(encoding="utf-8-sig"))
         if latest.get("stopRequested"):
             run["stopRequested"] = True
             item.update(result="Interrupted", exitCode=None, interruptionMessage="The test run was closed manually.")
             atomic_json(path, run)
             continue
         item["result"] = "Running"
+        logs = STATE / "logs" / run_id
+        logs.mkdir(parents=True, exist_ok=True)
+        log_path = logs / (re.sub(r"[^A-Za-z0-9._-]", "_", item["testCase"]) + ".log")
+        item["logPath"] = str(log_path)
+        log_path.touch()
         atomic_json(path, run)
         command = item.pop("executionCommand")
         try:
@@ -252,7 +243,8 @@ def execute_run(run_id):
         except OSError as error:
             output, exit_code = str(error), -1
 
-        latest = json.loads(path.read_text(encoding="utf-8"))
+        log_path.write_text(output, encoding="utf-8")
+        latest = json.loads(path.read_text(encoding="utf-8-sig"))
         if latest.get("stopRequested"):
             run["stopRequested"] = True
             item.update(result="Interrupted", exitCode=None, interruptionMessage="The test run was closed manually.", consoleOutput=output)
@@ -263,6 +255,32 @@ def execute_run(run_id):
 
 
 def handle(operation, method, body):
+    if operation == "test-runs" and method == "GET":
+        runs = []
+        try:
+            paths = list(RUNS.iterdir())
+        except FileNotFoundError:
+            paths = []
+        except OSError as error:
+            raise RuntimeError(f"Unable to read test run directory {RUNS}: {error}") from error
+        for path in paths:
+            if not re.fullmatch(r"TR-[0-9]+\.json", path.name):
+                continue
+            if path.with_suffix(".deleted").exists():
+                continue
+            try:
+                run = json.loads(path.read_text(encoding="utf-8-sig"))
+                if (not isinstance(run, dict) or run.get("id") != path.stem
+                        or not isinstance(run.get("startedAt"), str)
+                        or not isinstance(run.get("started"), list)
+                        or any(not isinstance(item, dict) or item.get("result") not in
+                               {"Pending", "Running", "Passed", "Failed", "Blocked", "Interrupted"}
+                               for item in run["started"])):
+                    raise ValueError("Invalid test run record.")
+                runs.append(serialize_run(run))
+            except (OSError, ValueError, TypeError, KeyError) as error:
+                raise RuntimeError(f"Unable to read test run {path}: {error}") from error
+        return {"testRuns": sorted(runs, key=lambda item: item["startedAt"], reverse=True)}
     current = settings()
     if operation == "settings":
         if method == "PUT":
@@ -306,22 +324,19 @@ def handle(operation, method, body):
             if case is None:
                 raise RuntimeError(f"Unknown test case selection: {case_id}")
             command = [str(executable), "cli", "bundle", "run", "--path", str(runner), "--", case["executionName"], str(mode), device]
-            started.append({"testCase": case_id, "testCaseName": case["executionName"], "inspectionMode": mode, "processId": None, "command": subprocess.list2cmdline(command), "executionCommand": command, "result": "Pending", "consoleOutput": "", "exitCode": None, "reportUrl": None, "reportLocation": None, "checks": []})
+            started.append({"testCase": case_id, "testCaseName": case["executionName"], "inspectionMode": mode, "processId": None, "command": subprocess.list2cmdline(command), "executionCommand": command, "result": "Pending", "consoleOutput": "", "exitCode": None, "reportLocation": None, "checks": []})
         run = {"id": run_id, "title": str(body.get("name", "")).strip(), "device": device, "inspectionMode": mode, "startedAt": datetime.now().astimezone().isoformat(timespec="milliseconds"), "libraryPath": str(root), "started": started}
         RUNS.mkdir(parents=True, exist_ok=True)
         atomic_json(run_path(run_id), run)
         worker = write_background_worker("run-worker.py", "run", run_id)
         subprocess.Popen([str(executable), "cli", "bundle", "run", "--path", str(worker)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
         return serialize_run(run)
-    if operation == "test-runs" and method == "GET":
-        runs = [serialize_run(json.loads(path.read_text(encoding="utf-8"))) for path in RUNS.glob("TR-*.json") if not path.with_suffix(".deleted").exists()] if RUNS.is_dir() else []
-        return {"testRuns": sorted(runs, key=lambda item: item["startedAt"], reverse=True)}
     match = re.fullmatch(r"test-runs/(TR-[0-9]+)", operation)
     if match and method == "DELETE":
         path = run_path(match.group(1))
         marker = path.with_suffix(".deleted")
         if not marker.exists():
-            run = json.loads(path.read_text(encoding="utf-8"))
+            run = json.loads(path.read_text(encoding="utf-8-sig"))
             if serialize_run(run)["status"] == "Running":
                 raise RuntimeError("Close the running test run before deleting it.")
             # Separate tombstone survives any late write from a closing runner.
@@ -329,19 +344,19 @@ def handle(operation, method, body):
         return {"deleted": True, "id": match.group(1)}
     match = re.fullmatch(r"test-runs/(TR-[0-9]+)/close", operation)
     if match:
-        path = run_path(match.group(1)); run = json.loads(path.read_text(encoding="utf-8")); run["stopRequested"] = True
+        path = run_path(match.group(1)); run = json.loads(path.read_text(encoding="utf-8-sig")); run["stopRequested"] = True
         for item in run["started"]:
             if item["result"] in {"Pending", "Running"}:
                 item.update(result="Interrupted", exitCode=None, error="The test run was closed manually.", interruptionMessage="The test run was closed manually.")
         atomic_json(path, run); return serialize_run(run)
     match = re.fullmatch(r"test-runs/(TR-[0-9]+)/reports/([^/]+)/open", operation)
     if match and method == "POST":
-        run = json.loads(run_path(match.group(1)).read_text(encoding="utf-8"))
+        run = json.loads(run_path(match.group(1)).read_text(encoding="utf-8-sig"))
         item = next((value for value in run["started"] if value["testCase"] == match.group(2)), None)
-        if item:
-            set_report_reference(item, run.get("libraryPath"))
         if not item or not item.get("reportLocation"):
             raise RuntimeError("Test report was not found.")
+        if re.match(r"(?i)^(?:https?://|file:|\\\\)", item["reportLocation"]):
+            raise RuntimeError("Only local HTML reports can be opened.")
         report = Path(item["reportLocation"]).expanduser()
         if not report.is_absolute():
             report = Path(run["libraryPath"]) / report
@@ -352,17 +367,33 @@ def handle(operation, method, body):
             os.startfile(str(report))
         else:
             subprocess.run(["open" if sys.platform == "darwin" else "xdg-open", str(report)], check=True)
-        return {"reportUrl": report.as_uri()}
+        return {"opened": True}
     match = re.fullmatch(r"test-runs/(TR-[0-9]+)/reports/([^/]+)/content", operation)
     if match:
-        run = json.loads(run_path(match.group(1)).read_text(encoding="utf-8")); item = next((value for value in run["started"] if value["testCase"] == match.group(2)), None)
+        run = json.loads(run_path(match.group(1)).read_text(encoding="utf-8-sig")); item = next((value for value in run["started"] if value["testCase"] == match.group(2)), None)
         report = Path(item.get("reportLocation", "")) if item else Path()
+        if not report.is_absolute():
+            report = Path(run["libraryPath"]) / report
         if not item or not report.is_file() or report.stat().st_size > 8 * 1024 * 1024:
             raise RuntimeError("Test report was not found or exceeds the viewing limit.")
         return {"contentBase64": base64.b64encode(report.read_bytes()).decode("ascii")}
+    match = re.fullmatch(r"test-runs/(TR-[0-9]+)/logs/([^/]+)/open", operation)
+    if match and method == "POST":
+        run = json.loads(run_path(match.group(1)).read_text(encoding="utf-8-sig"))
+        item = next((value for value in run["started"] if value["testCase"] == match.group(2)), None)
+        if not item or not item.get("logPath"):
+            raise RuntimeError("Test execution log was not found.")
+        log = Path(item["logPath"]).expanduser().resolve()
+        if not log.is_file() or log.suffix.lower() not in {".log", ".txt"} or str(log).startswith("\\\\"):
+            raise RuntimeError("Only local text logs can be opened.")
+        if sys.platform == "win32":
+            subprocess.Popen([str(Path(os.environ["SystemRoot"]) / "System32" / "notepad.exe"), str(log)])
+        else:
+            subprocess.run((["open", "-t"] if sys.platform == "darwin" else ["xdg-open"]) + [str(log)], check=True)
+        return {"opened": True}
     match = re.fullmatch(r"test-runs/(TR-[0-9]+)/logs/([^/]+)/content", operation)
     if match:
-        run = json.loads(run_path(match.group(1)).read_text(encoding="utf-8")); item = next((value for value in run["started"] if value["testCase"] == match.group(2)), None)
+        run = json.loads(run_path(match.group(1)).read_text(encoding="utf-8-sig")); item = next((value for value in run["started"] if value["testCase"] == match.group(2)), None)
         if not item:
             raise RuntimeError("Test execution log was not found.")
         content = item.get("consoleOutput", "").encode("utf-8")
@@ -382,7 +413,7 @@ def main():
         return
     if _request_path_value:
         request_path = Path(_request_path_value)
-        fields = request_path.read_text(encoding="utf-8").splitlines()
+        fields = request_path.read_text(encoding="utf-8-sig").splitlines()
         request_path.unlink(missing_ok=True)
         if len(fields) == 3:
             fields.append("")
